@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>cbb92391-68f6-4fcc-bba3-0a1fd0ab092d</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartVoiceNotes.Core\SmartVoiceNotes.Core.csproj" />
+    <ProjectReference Include="..\SmartVoiceNotes.Infrastructure\SmartVoiceNotes.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

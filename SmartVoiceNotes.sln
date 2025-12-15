@@ -1,0 +1,43 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.10.34928.147
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SmartVoiceNotes.Core", "SmartVoiceNotes.Core\SmartVoiceNotes.Core.csproj", "{C8729837-C180-46A0-A08C-A7ABD9F678D3}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SmartVoiceNotes.Infrastructure", "SmartVoiceNotes.Infrastructure\SmartVoiceNotes.Infrastructure.csproj", "{D73AF884-EC0B-44D4-9510-A52C99B1DFA4}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SmartVoiceNotes.API", "SmartVoiceNotes.API\SmartVoiceNotes.API.csproj", "{BFCEDAEB-466E-4962-A607-9B727885BFC8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartVoiceNotes.UI", "SmartVoiceNotes.UI\SmartVoiceNotes.UI.csproj", "{E553D235-4BDD-4A16-A886-77CAD70F5B26}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C8729837-C180-46A0-A08C-A7ABD9F678D3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8729837-C180-46A0-A08C-A7ABD9F678D3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8729837-C180-46A0-A08C-A7ABD9F678D3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8729837-C180-46A0-A08C-A7ABD9F678D3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D73AF884-EC0B-44D4-9510-A52C99B1DFA4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D73AF884-EC0B-44D4-9510-A52C99B1DFA4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D73AF884-EC0B-44D4-9510-A52C99B1DFA4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D73AF884-EC0B-44D4-9510-A52C99B1DFA4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BFCEDAEB-466E-4962-A607-9B727885BFC8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BFCEDAEB-466E-4962-A607-9B727885BFC8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BFCEDAEB-466E-4962-A607-9B727885BFC8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BFCEDAEB-466E-4962-A607-9B727885BFC8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E553D235-4BDD-4A16-A886-77CAD70F5B26}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E553D235-4BDD-4A16-A886-77CAD70F5B26}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E553D235-4BDD-4A16-A886-77CAD70F5B26}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E553D235-4BDD-4A16-A886-77CAD70F5B26}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {4829E12D-40E7-45F7-B95A-B2C524E11295}
+	EndGlobalSection
+EndGlobal
