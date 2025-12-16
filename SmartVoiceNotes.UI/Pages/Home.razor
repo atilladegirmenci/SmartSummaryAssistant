@@ -9,7 +9,7 @@
 
 <div class="container mt-5">
     <div class="text-center mb-4">
-        <h1 class="display-5 fw-bold">🎧 Smart Voice AI</h1>
+        <h1 class="display-5 fw-bold">Smart Summary Assistant</h1>
         <p class="text-muted">Upload your video or audio files and decide how you want it analyzed.</p>
     </div>
 
@@ -37,6 +37,7 @@
                         <option value="Audiobook">Audiobook / Story</option>
                         <option value="Meeting">Meeting / Interview</option>
                         <option value="Podcast">Podcast / Chat</option>
+                        <option value="Podcast">Documentary</option>
                     </select>
                 </div>
 
@@ -73,23 +74,32 @@
                 }
             </div>
 
-            <hr class="text-muted opacity-25 my-4" />
-
             <ul class="nav nav-pills nav-fill mb-4 p-2"
                 style="background-color: #e0e0e0; border-radius: 50px; box-shadow: inset 6px 6px 12px #bebebe, inset -6px -6px 12px #ffffff;">
+
                 <li class="nav-item me-2">
-                    <button class="nav-link rounded-pill fw-bold d-flex align-items-center justify-content-center py-3 @(activeTab == "file" ? "active bg-primary shadow text-white" : "text-secondary")"
+                    <button class="nav-link rounded-pill fw-bold d-flex align-items-center justify-content-center py-3 @(activeTab == "file" ? "active bg-file-active shadow" : "text-secondary")"
                             style="transition: all 0.3s ease;"
                             @onclick='() => activeTab = "file"'>
-                        <span class="fs-5 me-2">📁</span> File Upload
+                        <span class="fs-5 me-2 d-flex align-items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" class="bi bi-folder-fill" viewBox="0 0 16 16">
+                                <path d="M9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a1.99 1.99 0 0 1 .342-1.31L.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3zm-8.322.12C1.72 3.042 1.95 3 2.19 3h5.396l-.707-.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139z" />
+                            </svg>
+                        </span>
+                        File Upload
                     </button>
                 </li>
 
-                <li class="nav-item">
-                    <button class="nav-link rounded-pill fw-bold d-flex align-items-center justify-content-center py-3 @(activeTab == "youtube" ? "active bg-danger shadow text-white" : "text-secondary")"
+                <li class="nav-item ">
+                    <button class="nav-link rounded-pill fw-bold d-flex align-items-center justify-content-center py-3 @(activeTab == "youtube" ? "active bg-youtube-active shadow" : "text-secondary")"
                             style="transition: all 0.3s ease;"
                             @onclick='() => activeTab = "youtube"'>
-                        <span class="fs-5 me-2">🎥</span> YouTube URL
+                        <span class="fs-5 me-2 d-flex align-items-center @(activeTab == "youtube" ? "" : "text-danger")">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" fill="currentColor" class="bi bi-youtube" viewBox="0 0 16 16">
+                                <path d="M8.051 1.999h.089c.822.003 4.987.033 6.11.335a2.01 2.01 0 0 1 1.415 1.42c.101.38.172.883.22 1.402l.01.104.022.26.008.104c.065.914.073 1.77.074 1.957v.075c-.001.194-.01 1.108-.082 2.06l-.008.105-.009.104c-.05.572-.124 1.14-.235 1.558a2.007 2.007 0 0 1-1.415 1.42c-1.16.312-5.569.334-6.18.335h-.142c-.309 0-1.587-.006-2.927-.052l-.17-.006-.087-.004-.171-.007-.171-.007c-1.11-.049-2.167-.128-2.654-.26a2.007 2.007 0 0 1-1.415-1.415c-.111-.417-.185-.986-.235-1.558L.09 9.82l-.008-.104A31.4 31.4 0 0 1 0 7.68v-.123c.002-.215.01-.958.064-1.778l.007-.103.003-.052.008-.104.022-.26.01-.104c.048-.519.119-1.023.22-1.402a2.007 2.007 0 0 1 1.415-1.42c.487-.13 1.544-.21 2.654-.26l.17-.007.172-.006.086-.003.171-.007A99.788 99.788 0 0 1 7.858 2h.193zM6.4 5.209v4.818l4.157-2.408L6.4 5.209z" />
+                            </svg>
+                        </span>
+                        YouTube URL
                     </button>
                 </li>
             </ul>
@@ -256,7 +266,6 @@
     private void HandleFileSelection(InputFileChangeEventArgs e)
     {
         selectedFile = e.File;
-        // Hata mesajını temizle, yeni dosya seçildi
         errorMessage = null;
     }
 
@@ -368,7 +377,6 @@
         await JSRuntime.InvokeVoidAsync("renderMath");
     }
 
-    // Butona basınca tersine çeviren metot
     private void ToggleTranscript()
     {
         isTranscriptVisible = !isTranscriptVisible;
@@ -528,18 +536,18 @@
         background-color: #4296f4; 
         color: white;
         border: none;
-        border-radius: 15px; /* Inputlarla uyumlu köşe */
+        border-radius: 15px; 
         font-weight: bold;
         padding: 10px 25px;
         box-shadow: 0 4px 6px rgba(66, 150, 244, 0.3); 
         transition: all 0.3s ease;
     }
 
-        /* Hover (Üzerine gelince) - Biraz daha koyu olsun */
+        /*Hover */
         .btn-ai-analyze:hover {
-            background-color: #1a73e8; /* Daha koyu mavi */
+            background-color: #1a73e8; 
             color: white;
-            transform: translateY(-2px); /* Hafif yukarı kalksın */
+            transform: translateY(-2px); 
             box-shadow: 0 6px 12px rgba(26, 115, 232, 0.4);
         }
 
@@ -668,6 +676,16 @@
       color: var(--text);
     }
 
+    .bg-youtube-active {
+        background-color: #cc0000 !important; /* Dark red */
+        color: white !important;
+    }
+
+    .bg-file-active {
+        background-color: #007AFF !important; /* Windows Klasör Sarısı */
+        color: white !important; /* Koyu renk yazı (okunabilirlik için) */
+    }
+
     /* KEYFRAMES */
     @@keyframes page-2 {
       0% { transform: rotateY(180deg); opacity: 0; }
@@ -731,9 +749,9 @@
         }
 
     mjx-container[display="true"] {
-        display: block !important; /* Blok gibi davran */
-        text-align: center !important; /* Ortala */
-        margin: 0.3rem 0 !important; /* Üstüne ve altına boşluk bırak */
+        display: block !important; 
+        text-align: center !important; 
+        margin: 0.3rem 0 !important; 
         /* MOBİL UYUMU: Formül çok uzunsa ekranı patlatmasın, kaydırılsın */
         overflow-x: auto;
         overflow-y: hidden;

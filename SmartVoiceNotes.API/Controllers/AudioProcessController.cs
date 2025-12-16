@@ -12,7 +12,7 @@ namespace SmartVoiceNotes.API.Controllers
         private readonly ITranscriptionService _transcriptionService;
         private readonly IAiSummaryService _summaryService;
 
-        // Constructor Injection: Program.cs'te tanımladığımız servisler buraya otomatik gelir.
+        // Constructor Injection
         public AudioProcessController(ITranscriptionService transcriptionService, IAiSummaryService summaryService)
         {
             _transcriptionService = transcriptionService;
@@ -47,9 +47,8 @@ namespace SmartVoiceNotes.API.Controllers
             try
             {
                 using var stream = file.OpenReadStream();
-
-                // 1. ADIM: GROQ TESTİ
-                // Eğer burada patlarsa, Groq URL'i veya servisi hatalıdır.
+    
+                //groq test
                 string transcription;
                 try
                 {
@@ -61,8 +60,7 @@ namespace SmartVoiceNotes.API.Controllers
                     return StatusCode(500, $"HATA KAYNAĞI: GROQ (Ses Çevirme). Detay: {ex.Message}");
                 }
 
-                // 2. ADIM: GEMINI TESTİ
-                // Eğer burada patlarsa, Gemini URL'i veya model ismi hatalıdır.
+                //gemini test
                 var result = new ProcessResponseDto();
                 try
                 {

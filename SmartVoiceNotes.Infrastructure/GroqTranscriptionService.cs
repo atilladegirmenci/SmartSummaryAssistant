@@ -26,7 +26,7 @@ namespace SmartVoiceNotes.Infrastructure
             try
             {
                 var video = await youtube.Videos.GetAsync(youtubeUrl);
-                var title = video.Title; // İstersen başlığı loglayabilirsin
+                var title = video.Title; 
 
                 var streamManifest = await youtube.Videos.Streams.GetManifestAsync(youtubeUrl);
 
@@ -60,7 +60,7 @@ namespace SmartVoiceNotes.Infrastructure
         public async Task<string> TranscribeAudioAsync(Stream audioStream, string fileName)
         {
             //save the stram to a temp file 
-            var tempFilePath = Path.GetTempFileName(); // C:\Users\Temp\tmp123.tmp gibi bir dosya oluşturur
+            var tempFilePath = Path.GetTempFileName(); // C:\Users\Temp\tmp123.tmp or something like that
             var inputPath = Path.ChangeExtension(tempFilePath, Path.GetExtension(fileName));
 
             var filesToDelete = new List<string> { inputPath, tempFilePath }; //keep track of files to be deleted
@@ -86,15 +86,14 @@ namespace SmartVoiceNotes.Infrastructure
                 // 2. DOSYA ANALİZİ
                 var fileInfo = new FileInfo(inputPath);
                 long sizeInBytes = fileInfo.Length;
-                long limitInBytes = 20 * 1024 * 1024; // 20 MB Güvenli Sınır
+                long limitInBytes = 20 * 1024 * 1024; // 20 MB 
 
-                // EĞER KÜÇÜKSE: Direkt gönder (Eski yöntem)
                 if (sizeInBytes < limitInBytes)
                 {
                     return await SendToGroqApi(inputPath);
                 }
 
-                // EĞER BÜYÜKSE: Parçala ve Yönet (Chunking) 🔪
+                // if its large: Chunking
                 return await ProcessLargeFileAsync(inputPath);
             }
             finally
@@ -110,11 +109,10 @@ namespace SmartVoiceNotes.Infrastructure
         {
             var transcriptionBuilder = new StringBuilder();
 
-            // Dosyanın süresini öğrenelim
             var mediaInfo = await FFProbe.AnalyseAsync(inputPath);
             var duration = mediaInfo.Duration;
 
-            // 10 dakikalık parçalara bölelim (Groq için güvenli süre)
+            // 10 minute pieces safe for groq
             var chunkDuration = TimeSpan.FromMinutes(10);
             var chunks = new List<string>();
 
@@ -122,13 +120,9 @@ namespace SmartVoiceNotes.Infrastructure
             {
                 for (var currentTime = TimeSpan.Zero; currentTime < duration; currentTime += chunkDuration)
                 {
-                    // Geçici parça dosyası ismi
                     var chunkPath = Path.ChangeExtension(Path.GetTempFileName(), ".mp3");
                     chunks.Add(chunkPath);
 
-                    // FFMPEG: Dosyayı kesiyoruz
-                    // -ss : Başlangıç zamanı
-                    // -t  : Ne kadar süreceği
                     await FFMpegArguments
                         .FromFileInput(inputPath)
                         .OutputToFile(chunkPath, true, options => options
@@ -136,16 +130,13 @@ namespace SmartVoiceNotes.Infrastructure
                             .WithDuration(chunkDuration))
                         .ProcessAsynchronously();
 
-                    // Kesilen parçayı hemen API'ye gönderip metni alalım
                     var chunkText = await SendToGroqApi(chunkPath);
 
-                    // Metinleri uc uca ekle
                     transcriptionBuilder.Append(chunkText + " ");
                 }
             }
             finally
             {
-                // Oluşturduğumuz küçük parça dosyalarını silelim
                 foreach (var chunk in chunks)
                 {
                     if (File.Exists(chunk)) File.Delete(chunk);
@@ -170,12 +161,10 @@ namespace SmartVoiceNotes.Infrastructure
                 .ProcessAsynchronously();
         }
 
-        // API Çağırma İşini Tek Bir Metoda İndirgedik (DRY Prensibi)
         private async Task<string> SendToGroqApi(string filePath)
         {
             using var content = new MultipartFormDataContent();
 
-            // Dosyayı diskten oku
             using var fileStream = File.OpenRead(filePath);
             var fileContent = new StreamContent(fileStream);
 
@@ -187,7 +176,6 @@ namespace SmartVoiceNotes.Infrastructure
 
             var response = await _httpClient.PostAsync("https://api.groq.com/openai/v1/audio/transcriptions", content);
 
-            // Hata varsa fırlat (Controller yakalar)
             if (!response.IsSuccessStatusCode)
             {
                 var err = await response.Content.ReadAsStringAsync();

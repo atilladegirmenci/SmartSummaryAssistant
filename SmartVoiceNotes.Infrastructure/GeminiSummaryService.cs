@@ -17,7 +17,7 @@ namespace SmartVoiceNotes.Infrastructure
         public GeminiSummaryService(HttpClient httpClient, IConfiguration configuration)
         {
             _httpClient = httpClient;
-            // Retrieve the key from secrets.json or appsettings.json
+            // Retrieve the key from secrets.json 
             _apiKey = configuration["AiSettings:GeminiApiKey"];
         }
 
@@ -73,7 +73,7 @@ namespace SmartVoiceNotes.Infrastructure
                 Encoding.UTF8,
                 "application/json");
 
-            // Using the specific model found in your project list: Gemini 2.5 Flash
+            // Gemini 2.5 Flash
             var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={cleanKey}";
 
             var response = await _httpClient.PostAsync(url, jsonContent);
@@ -101,46 +101,12 @@ namespace SmartVoiceNotes.Infrastructure
 
             return new ProcessResponseDto
             {
-                // Tüm cevabı (Özet + Quiz) Summary alanına basıyoruz.
-                // QuizQuestions listesini boş bırakıyoruz çünkü sorular metnin içinde.
+                
                 Summary = geminiText,
-                QuizQuestions = new List<string>(),
+                QuizQuestions = new List<string>(), //empty
                 OriginalTranscription = text
             };
 
-            string cleanJson = geminiText;
-
-            // first and last "{" "}"
-            int startIndex = geminiText.IndexOf('{');
-            int endIndex = geminiText.LastIndexOf('}');
-
-            if (startIndex != -1 && endIndex != -1)
-            {
-                // Sadece bu ikisinin arasını al (Gereksiz "Here is result:" yazılarını atar)
-                cleanJson = geminiText.Substring(startIndex, endIndex - startIndex + 1);
-            }
-            else
-            {
-                throw new Exception("AI did not generate a valid json format.");
-            }
-
-            // 3. Olası kaçış karakterlerini temizle (Bazen lazım olabilir)
-            // cleanJson = cleanJson.Replace("\\n", " "); // İhtiyaca göre açılabilir
-
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-
-            try
-            {
-                var resultDto = JsonSerializer.Deserialize<ProcessResponseDto>(cleanJson, options);
-                resultDto.OriginalTranscription = text; // Orijinal metni de ekle
-                return resultDto;
-            }
-            catch (JsonException jex)
-            {
-                // Hata ayıklamak için konsola yazdıralım
-                Console.WriteLine($"JSON Parse Hatası. Gelen Veri: {cleanJson}");
-                throw new Exception($"AI JSON formatı bozuk: {jex.Message}");
-            }
         }
     }
 }
