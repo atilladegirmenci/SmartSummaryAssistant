@@ -26,42 +26,35 @@ namespace SmartVoiceNotes.API.Controllers
         [RequestFormLimits(MultipartBodyLengthLimit = 524288000)] // 500 MB
         public async Task<IActionResult> UploadAudio(IFormFile file, [FromQuery] string language, [FromQuery] string sourceType, [FromQuery] string style, [FromQuery] bool includeQuiz, [FromQuery] short qCount)
         {
-            
-
-            if (file == null || file.Length == 0)
+            // Validate file
+            if (file == null)
             {
-                var error = ErrorResponseHelper.CreateFileValidationError(
-                    "No file provided",
-                    "Please upload an audio or video file");
+                var error = ErrorResponseHelper.CreateFileValidationError("File validation failed", "No file provided");
                 return BadRequest(error);
             }
 
-            // audio and video formats are allowed
+            var fileError = ValidationHelper.ValidateFileInfo(file.FileName, file.Length);
+            if (fileError != null)
+            {
+                var error = ErrorResponseHelper.CreateFileValidationError("File validation failed", fileError);
+                return BadRequest(error);
+            }
+
+            // Validate processing parameters
+            var paramError = ValidationHelper.ValidateProcessingParameters(language, sourceType, style, qCount);
+            if (paramError != null)
+            {
+                var error = ErrorResponseHelper.CreateFileValidationError("Invalid parameters", paramError);
+                return BadRequest(error);
+            }
+
             var extension = Path.GetExtension(file.FileName).ToLower();
-            if (!FileConstants.AllSupportedExtensions.Contains(extension))
-            {
-                var error = ErrorResponseHelper.CreateFileValidationError(
-                    "Unsupported file format",
-                    $"Supported formats: {string.Join(", ", FileConstants.AllSupportedExtensions)}");
-                return BadRequest(error);
-            }
-
-            // file size check
-            if (file.Length > FileConstants.MaxFileSizeBytes)
-            {
-                var error = ErrorResponseHelper.CreateFileValidationError(
-                    "File size exceeds limit",
-                    $"Maximum allowed size: {FileConstants.MaxFileSizeDisplay}");
-                return BadRequest(error);
-            }
-
             bool isVideo = FileConstants.VideoExtensions.Contains(extension);
 
             try
             {
                 using var stream = file.OpenReadStream();
     
-                //groq test
                 string transcription;
                 try
                 {
@@ -77,7 +70,6 @@ namespace SmartVoiceNotes.API.Controllers
                     return StatusCode(500, error);
                 }
 
-                //gemini test
                 ProcessResponseDto result;
                 try
                 {
@@ -105,11 +97,19 @@ namespace SmartVoiceNotes.API.Controllers
         [HttpPost("process-youtube")]
         public async Task<IActionResult> ProcessYoutube([FromQuery] string url, [FromQuery] string language, [FromQuery] string sourceType, [FromQuery] string style, [FromQuery] bool includeQuiz, [FromQuery] short qCount)
         {
-            if (string.IsNullOrWhiteSpace(url))
+            // Validate YouTube URL
+            var urlError = ValidationHelper.ValidateYoutubeUrl(url);
+            if (urlError != null)
             {
-                var error = ErrorResponseHelper.CreateFileValidationError(
-                    "YouTube URL is required",
-                    "Please provide a valid YouTube URL");
+                var error = ErrorResponseHelper.CreateFileValidationError("Invalid YouTube URL", urlError);
+                return BadRequest(error);
+            }
+
+            // Validate processing parameters
+            var paramError = ValidationHelper.ValidateProcessingParameters(language, sourceType, style, qCount);
+            if (paramError != null)
+            {
+                var error = ErrorResponseHelper.CreateFileValidationError("Invalid parameters", paramError);
                 return BadRequest(error);
             }
 
