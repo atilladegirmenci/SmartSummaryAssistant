@@ -10,6 +10,9 @@ using System.Text.Json;
 
 namespace SmartVoiceNotes.Infrastructure
 {
+    /// <summary>
+    /// Implementation of transcription service using Groq's Whisper API
+    /// </summary>
     public class GroqTranscriptionService : ITranscriptionService
     {
         private readonly HttpClient _httpClient;
@@ -21,6 +24,8 @@ namespace SmartVoiceNotes.Infrastructure
             _apiKey = configuration[ApiConstants.Groq.ConfigKeyPath] 
                 ?? throw new InvalidOperationException($"Groq API key is not configured. Please set {ApiConstants.Groq.ConfigKeyPath} in configuration.");
         }
+        
+        /// <inheritdoc/>
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
             if (string.IsNullOrWhiteSpace(youtubeUrl))
@@ -73,6 +78,8 @@ namespace SmartVoiceNotes.Infrastructure
                 }
             }
         }
+        
+        /// <inheritdoc/>
         public async Task<string> TranscribeAudioAsync(Stream audioStream, string fileName)
         {
             if (audioStream == null)
@@ -142,6 +149,9 @@ namespace SmartVoiceNotes.Infrastructure
             }
         }
 
+        /// <summary>
+        /// Processes large audio files by splitting them into chunks and transcribing each chunk
+        /// </summary>
         private async Task<string> ProcessLargeFileAsync(string inputPath)
         {
             var transcriptionBuilder = new StringBuilder();
@@ -193,11 +203,17 @@ namespace SmartVoiceNotes.Infrastructure
             return transcriptionBuilder.ToString();
         }
 
+        /// <summary>
+        /// Determines if a file is a video based on its extension
+        /// </summary>
         private bool IsVideoFile(string path)
         {
             return FileConstants.VideoExtensions.Contains(Path.GetExtension(path).ToLower());
         }
 
+        /// <summary>
+        /// Extracts audio from a video file using FFmpeg
+        /// </summary>
         private async Task ExtractAudioFromVideoAsync(string videoPath, string outputPath)
         {
             await FFMpegArguments
@@ -207,6 +223,9 @@ namespace SmartVoiceNotes.Infrastructure
                 .ProcessAsynchronously();
         }
 
+        /// <summary>
+        /// Sends an audio file to the Groq API for transcription
+        /// </summary>
         private async Task<string> SendToGroqApi(string filePath)
         {
             if (!File.Exists(filePath))

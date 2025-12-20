@@ -10,6 +10,9 @@ using System.Text.Json;
 
 namespace SmartVoiceNotes.Infrastructure
 {
+    /// <summary>
+    /// Implementation of AI summary service using Google's Gemini API
+    /// </summary>
     public class GeminiSummaryService : IAiSummaryService
     {
         private readonly HttpClient _httpClient;
@@ -22,6 +25,7 @@ namespace SmartVoiceNotes.Infrastructure
                 ?? throw new InvalidOperationException($"Gemini API key is not configured. Please set {ApiConstants.Gemini.ConfigKeyPath} in configuration.");
         }
 
+        /// <inheritdoc/>
         public async Task<ProcessResponseDto> SummarizeTextAsync(string text, string language, string sourceType, string summaryStyle, bool includeQuiz, short questionCount, bool isVideo)
         {
             var cleanKey = _apiKey.Trim();
