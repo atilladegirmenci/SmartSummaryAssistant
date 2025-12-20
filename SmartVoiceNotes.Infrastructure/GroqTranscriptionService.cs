@@ -2,6 +2,7 @@
 using YoutubeExplode;
 using YoutubeExplode.Videos.Streams;
 using Microsoft.Extensions.Configuration;
+using SmartVoiceNotes.Core.Constants;
 using SmartVoiceNotes.Core.Interfaces;
 using System.Net.Http.Headers;
 using System.Text;
@@ -17,8 +18,8 @@ namespace SmartVoiceNotes.Infrastructure
         public GroqTranscriptionService(HttpClient httpClient, IConfiguration configuration)
         {
             _httpClient = httpClient;
-            _apiKey = configuration["AiSettings:GroqApiKey"] 
-                ?? throw new InvalidOperationException("Groq API key is not configured. Please set AiSettings:GroqApiKey in configuration.");
+            _apiKey = configuration[ApiConstants.Groq.ConfigKeyPath] 
+                ?? throw new InvalidOperationException($"Groq API key is not configured. Please set {ApiConstants.Groq.ConfigKeyPath} in configuration.");
         }
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
@@ -77,19 +78,18 @@ namespace SmartVoiceNotes.Infrastructure
                 
                 if(IsVideoFile(inputPath))
                 {
-                    var extractedAudioPath = Path.ChangeExtension(Path.GetTempFileName(), ".mp3");
+                    var extractedAudioPath = Path.ChangeExtension(Path.GetTempFileName(), ProcessingConstants.OutputAudioFormat);
                     filesToDelete.Add(extractedAudioPath);
 
                     await ExtractAudioFromVideoAsync(inputPath, extractedAudioPath);
 
                     inputPath = extractedAudioPath;
                 }
-                // 2. DOSYA ANALİZİ
+                // 2. FILE ANALYSIS
                 var fileInfo = new FileInfo(inputPath);
                 long sizeInBytes = fileInfo.Length;
-                long limitInBytes = 20 * 1024 * 1024; // 20 MB 
 
-                if (sizeInBytes < limitInBytes)
+                if (sizeInBytes < ProcessingConstants.ChunkThresholdBytes)
                 {
                     return await SendToGroqApi(inputPath);
                 }
@@ -113,15 +113,14 @@ namespace SmartVoiceNotes.Infrastructure
             var mediaInfo = await FFProbe.AnalyseAsync(inputPath);
             var duration = mediaInfo.Duration;
 
-            // 10 minute pieces safe for groq
-            var chunkDuration = TimeSpan.FromMinutes(10);
+            var chunkDuration = ProcessingConstants.ChunkDuration;
             var chunks = new List<string>();
 
             try
             {
                 for (var currentTime = TimeSpan.Zero; currentTime < duration; currentTime += chunkDuration)
                 {
-                    var chunkPath = Path.ChangeExtension(Path.GetTempFileName(), ".mp3");
+                    var chunkPath = Path.ChangeExtension(Path.GetTempFileName(), ProcessingConstants.OutputAudioFormat);
                     chunks.Add(chunkPath);
 
                     await FFMpegArguments
@@ -149,8 +148,7 @@ namespace SmartVoiceNotes.Infrastructure
 
         private bool IsVideoFile(string path)
         {
-            var videoExtensions = new[] { ".mp4", ".mov", ".avi", ".mkv", ".webm" };
-            return videoExtensions.Contains(Path.GetExtension(path).ToLower());
+            return FileConstants.VideoExtensions.Contains(Path.GetExtension(path).ToLower());
         }
 
         private async Task ExtractAudioFromVideoAsync(string videoPath, string outputPath)
@@ -158,7 +156,7 @@ namespace SmartVoiceNotes.Infrastructure
             await FFMpegArguments
                 .FromFileInput(videoPath)
                 .OutputToFile(outputPath, true, options => options
-                    .WithCustomArgument("-vn -acodec libmp3lame -q:a 2")) // High quality MP3
+                    .WithCustomArgument($"-vn -acodec libmp3lame -q:a {ProcessingConstants.AudioQualitySetting}"))
                 .ProcessAsynchronously();
         }
 
@@ -171,11 +169,11 @@ namespace SmartVoiceNotes.Infrastructure
 
             fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/mpeg");
             content.Add(fileContent, "file", Path.GetFileName(filePath));
-            content.Add(new StringContent("whisper-large-v3"), "model");
+            content.Add(new StringContent(ApiConstants.Groq.ModelName), "model");
 
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
 
-            var response = await _httpClient.PostAsync("https://api.groq.com/openai/v1/audio/transcriptions", content);
+            var response = await _httpClient.PostAsync(ApiConstants.Groq.BaseUrl, content);
 
             if (!response.IsSuccessStatusCode)
             {

@@ -1,5 +1,6 @@
 ﻿using AngleSharp.Text;
 using Microsoft.Extensions.Configuration;
+using SmartVoiceNotes.Core.Constants;
 using SmartVoiceNotes.Core.DTOs;
 using SmartVoiceNotes.Core.Interfaces;
 using System.ComponentModel;
@@ -17,8 +18,8 @@ namespace SmartVoiceNotes.Infrastructure
         public GeminiSummaryService(HttpClient httpClient, IConfiguration configuration)
         {
             _httpClient = httpClient;
-            _apiKey = configuration["AiSettings:GeminiApiKey"]
-                ?? throw new InvalidOperationException("Gemini API key is not configured. Please set AiSettings:GeminiApiKey in configuration.");
+            _apiKey = configuration[ApiConstants.Gemini.ConfigKeyPath]
+                ?? throw new InvalidOperationException($"Gemini API key is not configured. Please set {ApiConstants.Gemini.ConfigKeyPath} in configuration.");
         }
 
         public async Task<ProcessResponseDto> SummarizeTextAsync(string text, string language, string sourceType, string summaryStyle, bool includeQuiz, short questionCount, bool isVideo)
@@ -73,8 +74,8 @@ namespace SmartVoiceNotes.Infrastructure
                 Encoding.UTF8,
                 "application/json");
 
-            // Gemini 2.5 Flash
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={cleanKey}";
+            // Gemini API call
+            var url = $"{ApiConstants.Gemini.BaseUrl}/{ApiConstants.Gemini.ModelName}:generateContent?key={cleanKey}";
 
             var response = await _httpClient.PostAsync(url, jsonContent);
 

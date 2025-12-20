@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using SmartVoiceNotes.Core.Constants;
 using SmartVoiceNotes.Core.DTOs;
 using SmartVoiceNotes.Core.Interfaces;
 using System.Text.Json;
@@ -30,19 +31,15 @@ namespace SmartVoiceNotes.API.Controllers
                 return BadRequest("Please upload a audio or video file");
 
             // audio and video formats are allowed
-            var allowedExtensions = new[] { ".mp3", ".wav", ".m4a", ".mp4", ".mov", ".avi", ".mkv" };
             var extension = Path.GetExtension(file.FileName).ToLower();
-            if (!allowedExtensions.Contains(extension))
+            if (!FileConstants.AllSupportedExtensions.Contains(extension))
                 return BadRequest("File format does not allowed");
 
-            // file size: 500Mb
-            if (file.Length > 500 * 1024 * 1024)
-                return BadRequest("Max file size is 500Mb");
+            // file size check
+            if (file.Length > FileConstants.MaxFileSizeBytes)
+                return BadRequest($"Max file size is {FileConstants.MaxFileSizeDisplay}");
 
-            var ext = Path.GetExtension(file.FileName).ToLower();
-            var videoExtensions = new[] { ".mp4", ".mov", ".avi", ".mkv", ".webm" };
-
-            bool isVideo = videoExtensions.Contains(ext);
+            bool isVideo = FileConstants.VideoExtensions.Contains(extension);
 
             try
             {
