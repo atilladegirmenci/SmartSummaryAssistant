@@ -23,7 +23,11 @@ namespace SmartVoiceNotes.Infrastructure
         }
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
+            if (string.IsNullOrWhiteSpace(youtubeUrl))
+                throw new ArgumentException("YouTube URL cannot be empty", nameof(youtubeUrl));
+
             var youtube = new YoutubeClient();
+            string? tempFilePath = null;
 
             try
             {
@@ -32,35 +36,51 @@ namespace SmartVoiceNotes.Infrastructure
 
                 var streamManifest = await youtube.Videos.Streams.GetManifestAsync(youtubeUrl);
 
-                // get audio only
+                // Get audio only
                 var streamInfo = streamManifest.GetAudioOnlyStreams().GetWithHighestBitrate();
 
                 if (streamInfo == null)
                     throw new InvalidOperationException("No audio stream available for this YouTube video. The video may be unavailable or restricted.");
 
-                var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.mp3");
+                tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.mp3");
 
                 await youtube.Videos.Streams.DownloadAsync(streamInfo, tempFilePath);
 
-                try
+                await using (var stream = File.OpenRead(tempFilePath))
                 {
-                    using (var stream = File.OpenRead(tempFilePath))
-                    {
-                        return await TranscribeAudioAsync(stream, "youtube_audio.mp3");
-                    }
-                }
-                finally
-                {
-                    if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+                    return await TranscribeAudioAsync(stream, "youtube_audio.mp3");
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is InvalidOperationException || ex is ArgumentException))
             {
                 throw new InvalidOperationException($"Failed to process YouTube video. Ensure the URL is valid and the video is accessible. Error: {ex.Message}", ex);
+            }
+            finally
+            {
+                if (tempFilePath != null)
+                {
+                    try
+                    {
+                        if (File.Exists(tempFilePath))
+                        {
+                            File.Delete(tempFilePath);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore cleanup failures
+                    }
+                }
             }
         }
         public async Task<string> TranscribeAudioAsync(Stream audioStream, string fileName)
         {
+            if (audioStream == null)
+                throw new ArgumentNullException(nameof(audioStream), "Audio stream cannot be null");
+            
+            if (string.IsNullOrWhiteSpace(fileName))
+                throw new ArgumentException("File name cannot be empty", nameof(fileName));
+
             // Save the stream to a temp file
             var tempFilePath = Path.GetTempFileName();
             var inputPath = Path.ChangeExtension(tempFilePath, Path.GetExtension(fileName));
@@ -70,7 +90,7 @@ namespace SmartVoiceNotes.Infrastructure
             try
             {
                 // Write stream to disk
-                using (var fileStream = File.Create(inputPath))
+                await using (var fileStream = File.Create(inputPath))
                 {
                     await audioStream.CopyToAsync(fileStream);
                 }
@@ -85,8 +105,13 @@ namespace SmartVoiceNotes.Infrastructure
 
                     inputPath = extractedAudioPath;
                 }
-                // 2. FILE ANALYSIS
+                
+                // File analysis
                 var fileInfo = new FileInfo(inputPath);
+                
+                if (!fileInfo.Exists)
+                    throw new FileNotFoundException("Temporary file was not created successfully", inputPath);
+                
                 long sizeInBytes = fileInfo.Length;
 
                 if (sizeInBytes < ProcessingConstants.ChunkThresholdBytes)
@@ -94,14 +119,25 @@ namespace SmartVoiceNotes.Infrastructure
                     return await SendToGroqApi(inputPath);
                 }
 
-                // if its large: Chunking
+                // If large: Chunking
                 return await ProcessLargeFileAsync(inputPath);
             }
             finally
             {
+                // Cleanup: delete all temporary files
                 foreach (var file in filesToDelete)
                 {
-                    if (File.Exists(file)) File.Delete(file);
+                    try
+                    {
+                        if (File.Exists(file))
+                        {
+                            File.Delete(file);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore cleanup failures - these are temp files that will be cleaned eventually
+                    }
                 }
             }
         }
@@ -137,9 +173,20 @@ namespace SmartVoiceNotes.Infrastructure
             }
             finally
             {
+                // Cleanup: delete all chunk files
                 foreach (var chunk in chunks)
                 {
-                    if (File.Exists(chunk)) File.Delete(chunk);
+                    try
+                    {
+                        if (File.Exists(chunk))
+                        {
+                            File.Delete(chunk);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore cleanup failures - these are temp files
+                    }
                 }
             }
 
@@ -162,10 +209,13 @@ namespace SmartVoiceNotes.Infrastructure
 
         private async Task<string> SendToGroqApi(string filePath)
         {
+            if (!File.Exists(filePath))
+                throw new FileNotFoundException("Audio file not found for transcription", filePath);
+
             using var content = new MultipartFormDataContent();
 
-            using var fileStream = File.OpenRead(filePath);
-            var fileContent = new StreamContent(fileStream);
+            await using var fileStream = File.OpenRead(filePath);
+            using var fileContent = new StreamContent(fileStream);
 
             fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/mpeg");
             content.Add(fileContent, "file", Path.GetFileName(filePath));
