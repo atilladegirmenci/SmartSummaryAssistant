@@ -17,13 +17,13 @@ namespace SmartVoiceNotes.Infrastructure
         public GeminiSummaryService(HttpClient httpClient, IConfiguration configuration)
         {
             _httpClient = httpClient;
-            // Retrieve the key from secrets.json 
-            _apiKey = configuration["AiSettings:GeminiApiKey"];
+            _apiKey = configuration["AiSettings:GeminiApiKey"]
+                ?? throw new InvalidOperationException("Gemini API key is not configured. Please set AiSettings:GeminiApiKey in configuration.");
         }
 
         public async Task<ProcessResponseDto> SummarizeTextAsync(string text, string language, string sourceType, string summaryStyle, bool includeQuiz, short questionCount, bool isVideo)
         {
-            var cleanKey = _apiKey?.Trim();
+            var cleanKey = _apiKey.Trim();
             string prompt = string.Empty;
 
             string context = isVideo 
@@ -90,20 +90,21 @@ namespace SmartVoiceNotes.Infrastructure
 
             if (!doc.RootElement.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
             {
-                throw new Exception("AI içerik güvenliği nedeniyle yanıt vermedi.");
+                throw new Exception("AI content safety policy prevented response generation.");
             }
 
 
             // Parsing the nested JSON response from Gemini
             var geminiText = doc.RootElement.GetProperty("candidates")[0]
                 .GetProperty("content").GetProperty("parts")[0]
-                .GetProperty("text").GetString();
+                .GetProperty("text").GetString()
+                ?? throw new InvalidOperationException("Gemini API returned null text in response.");
 
             return new ProcessResponseDto
             {
                 
                 Summary = geminiText,
-                QuizQuestions = new List<string>(), //empty
+                QuizQuestions = new List<string>(),
                 OriginalTranscription = text
             };
 

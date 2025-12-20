@@ -57,18 +57,18 @@ namespace SmartVoiceNotes.API.Controllers
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, $"HATA KAYNAĞI: GROQ (Ses Çevirme). Detay: {ex.Message}");
+                    return StatusCode(500, $"ERROR SOURCE: GROQ (Transcription). Info: {ex.Message}");
                 }
 
                 //gemini test
-                var result = new ProcessResponseDto();
+                ProcessResponseDto result;
                 try
                 {
                     result = await _summaryService.SummarizeTextAsync(transcription,language, sourceType, style, includeQuiz, qCount, isVideo);
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, $"ERROR SOURCE: GEMINI (summerizeing). info: {ex.Message}");
+                    return StatusCode(500, $"ERROR SOURCE: GEMINI (summarizing). Info: {ex.Message}");
                 }
 
                 return Ok(result);

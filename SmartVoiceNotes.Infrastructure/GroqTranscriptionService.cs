@@ -17,7 +17,8 @@ namespace SmartVoiceNotes.Infrastructure
         public GroqTranscriptionService(HttpClient httpClient, IConfiguration configuration)
         {
             _httpClient = httpClient;
-            _apiKey = configuration["AiSettings:GroqApiKey"];
+            _apiKey = configuration["AiSettings:GroqApiKey"] 
+                ?? throw new InvalidOperationException("Groq API key is not configured. Please set AiSettings:GroqApiKey in configuration.");
         }
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
@@ -184,7 +185,10 @@ namespace SmartVoiceNotes.Infrastructure
 
             var jsonResponse = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(jsonResponse);
-            return doc.RootElement.GetProperty("text").GetString();
+            
+            var textProperty = doc.RootElement.GetProperty("text");
+            return textProperty.GetString() 
+                ?? throw new InvalidOperationException("Transcription API returned null text.");
         }
     }
 }
