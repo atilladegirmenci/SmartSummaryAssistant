@@ -253,7 +253,9 @@ namespace SmartVoiceNotes.Infrastructure
             var jsonResponse = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(jsonResponse);
             
-            var textProperty = doc.RootElement.GetProperty("text");
+            if (!doc.RootElement.TryGetProperty("text", out var textProperty))
+                throw new InvalidOperationException("Transcription API response missing 'text' property. Response may be malformed.");
+            
             return textProperty.GetString() 
                 ?? throw new InvalidOperationException("Transcription API returned null text.");
         }
