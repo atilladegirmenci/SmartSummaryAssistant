@@ -83,7 +83,7 @@ namespace SmartVoiceNotes.Infrastructure
             if (!response.IsSuccessStatusCode)
             {
                 var errorJson = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Google API Error ({response.StatusCode}): {errorJson}");
+                throw new HttpRequestException($"Gemini API request failed with status {response.StatusCode}. Check your API key and quota. Response: {errorJson}");
             }
 
             var responseString = await response.Content.ReadAsStringAsync();
@@ -91,7 +91,7 @@ namespace SmartVoiceNotes.Infrastructure
 
             if (!doc.RootElement.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
             {
-                throw new Exception("AI content safety policy prevented response generation.");
+                throw new InvalidOperationException("Gemini AI content safety policy prevented response generation. The input may contain restricted content.");
             }
 
 

@@ -36,7 +36,7 @@ namespace SmartVoiceNotes.Infrastructure
                 var streamInfo = streamManifest.GetAudioOnlyStreams().GetWithHighestBitrate();
 
                 if (streamInfo == null)
-                    throw new Exception("Audio stream could not found.");
+                    throw new InvalidOperationException("No audio stream available for this YouTube video. The video may be unavailable or restricted.");
 
                 var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.mp3");
 
@@ -56,20 +56,20 @@ namespace SmartVoiceNotes.Infrastructure
             }
             catch (Exception ex)
             {
-                throw new Exception($"Could not finish: {ex.Message}");
+                throw new InvalidOperationException($"Failed to process YouTube video. Ensure the URL is valid and the video is accessible. Error: {ex.Message}", ex);
             }
         }
         public async Task<string> TranscribeAudioAsync(Stream audioStream, string fileName)
         {
-            //save the stram to a temp file 
-            var tempFilePath = Path.GetTempFileName(); // C:\Users\Temp\tmp123.tmp or something like that
+            // Save the stream to a temp file
+            var tempFilePath = Path.GetTempFileName();
             var inputPath = Path.ChangeExtension(tempFilePath, Path.GetExtension(fileName));
 
-            var filesToDelete = new List<string> { inputPath, tempFilePath }; //keep track of files to be deleted
+            var filesToDelete = new List<string> { inputPath, tempFilePath };
 
             try
             {
-                // Stream'i diske yaz
+                // Write stream to disk
                 using (var fileStream = File.Create(inputPath))
                 {
                     await audioStream.CopyToAsync(fileStream);
@@ -178,7 +178,7 @@ namespace SmartVoiceNotes.Infrastructure
             if (!response.IsSuccessStatusCode)
             {
                 var err = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Groq API Error: {err}");
+                throw new HttpRequestException($"Groq API request failed with status {response.StatusCode}. Response: {err}");
             }
 
             var jsonResponse = await response.Content.ReadAsStringAsync();

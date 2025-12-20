@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using SmartVoiceNotes.Core.Constants;
 using SmartVoiceNotes.Core.DTOs;
+using SmartVoiceNotes.Core.Helpers;
 using SmartVoiceNotes.Core.Interfaces;
 using System.Text.Json;
 
@@ -28,16 +29,31 @@ namespace SmartVoiceNotes.API.Controllers
             
 
             if (file == null || file.Length == 0)
-                return BadRequest("Please upload a audio or video file");
+            {
+                var error = ErrorResponseHelper.CreateFileValidationError(
+                    "No file provided",
+                    "Please upload an audio or video file");
+                return BadRequest(error);
+            }
 
             // audio and video formats are allowed
             var extension = Path.GetExtension(file.FileName).ToLower();
             if (!FileConstants.AllSupportedExtensions.Contains(extension))
-                return BadRequest("File format does not allowed");
+            {
+                var error = ErrorResponseHelper.CreateFileValidationError(
+                    "Unsupported file format",
+                    $"Supported formats: {string.Join(", ", FileConstants.AllSupportedExtensions)}");
+                return BadRequest(error);
+            }
 
             // file size check
             if (file.Length > FileConstants.MaxFileSizeBytes)
-                return BadRequest($"Max file size is {FileConstants.MaxFileSizeDisplay}");
+            {
+                var error = ErrorResponseHelper.CreateFileValidationError(
+                    "File size exceeds limit",
+                    $"Maximum allowed size: {FileConstants.MaxFileSizeDisplay}");
+                return BadRequest(error);
+            }
 
             bool isVideo = FileConstants.VideoExtensions.Contains(extension);
 
@@ -54,7 +70,11 @@ namespace SmartVoiceNotes.API.Controllers
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, $"ERROR SOURCE: GROQ (Transcription). Info: {ex.Message}");
+                    var error = ErrorResponseHelper.CreateProcessingError(
+                        "Groq",
+                        "Failed to transcribe audio",
+                        ex.Message);
+                    return StatusCode(500, error);
                 }
 
                 //gemini test
@@ -65,21 +85,33 @@ namespace SmartVoiceNotes.API.Controllers
                 }
                 catch (Exception ex)
                 {
-                    return StatusCode(500, $"ERROR SOURCE: GEMINI (summarizing). Info: {ex.Message}");
+                    var error = ErrorResponseHelper.CreateProcessingError(
+                        "Gemini",
+                        "Failed to generate summary",
+                        ex.Message);
+                    return StatusCode(500, error);
                 }
 
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"General error: {ex.Message}");
+                var error = ErrorResponseHelper.CreateGeneralError(
+                    "Unexpected error during audio processing",
+                    ex.Message);
+                return StatusCode(500, error);
             }
         }
         [HttpPost("process-youtube")]
         public async Task<IActionResult> ProcessYoutube([FromQuery] string url, [FromQuery] string language, [FromQuery] string sourceType, [FromQuery] string style, [FromQuery] bool includeQuiz, [FromQuery] short qCount)
         {
             if (string.IsNullOrWhiteSpace(url))
-                return BadRequest("YouTube URL cannot be empty");
+            {
+                var error = ErrorResponseHelper.CreateFileValidationError(
+                    "YouTube URL is required",
+                    "Please provide a valid YouTube URL");
+                return BadRequest(error);
+            }
 
             try
             {
@@ -91,7 +123,10 @@ namespace SmartVoiceNotes.API.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"process error: {ex.Message}");
+                var error = ErrorResponseHelper.CreateGeneralError(
+                    "Failed to process YouTube video",
+                    ex.Message);
+                return StatusCode(500, error);
             }
         }
     }
