@@ -1,5 +1,6 @@
 ﻿using AngleSharp.Text;
 using Microsoft.Extensions.Configuration;
+using SmartVoiceNotes.Core.Constants;
 using SmartVoiceNotes.Core.DTOs;
 using SmartVoiceNotes.Core.Interfaces;
 using System.ComponentModel;
@@ -9,6 +10,9 @@ using System.Text.Json;
 
 namespace SmartVoiceNotes.Infrastructure
 {
+    /// <summary>
+    /// Implementation of AI summary service using Google's Gemini API
+    /// </summary>
     public class GeminiSummaryService : IAiSummaryService
     {
         private readonly HttpClient _httpClient;
@@ -17,13 +21,14 @@ namespace SmartVoiceNotes.Infrastructure
         public GeminiSummaryService(HttpClient httpClient, IConfiguration configuration)
         {
             _httpClient = httpClient;
-            // Retrieve the key from secrets.json 
-            _apiKey = configuration["AiSettings:GeminiApiKey"];
+            _apiKey = configuration[ApiConstants.Gemini.ConfigKeyPath]
+                ?? throw new InvalidOperationException($"Gemini API key is not configured. Please set {ApiConstants.Gemini.ConfigKeyPath} in configuration.");
         }
 
+        /// <inheritdoc/>
         public async Task<ProcessResponseDto> SummarizeTextAsync(string text, string language, string sourceType, string summaryStyle, bool includeQuiz, short questionCount, bool isVideo)
         {
-            var cleanKey = _apiKey?.Trim();
+            var cleanKey = _apiKey.Trim();
             string prompt = string.Empty;
 
             string context = isVideo 
@@ -73,8 +78,8 @@ namespace SmartVoiceNotes.Infrastructure
                 Encoding.UTF8,
                 "application/json");
 
-            // Gemini 2.5 Flash
-            var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={cleanKey}";
+            // Gemini API call
+            var url = $"{ApiConstants.Gemini.BaseUrl}/{ApiConstants.Gemini.ModelName}:generateContent?key={cleanKey}";
 
             var response = await _httpClient.PostAsync(url, jsonContent);
 
@@ -82,7 +87,7 @@ namespace SmartVoiceNotes.Infrastructure
             if (!response.IsSuccessStatusCode)
             {
                 var errorJson = await response.Content.ReadAsStringAsync();
-                throw new Exception($"Google API Error ({response.StatusCode}): {errorJson}");
+                throw new HttpRequestException($"Gemini API request failed with status {response.StatusCode}. Check your API key and quota. Response: {errorJson}");
             }
 
             var responseString = await response.Content.ReadAsStringAsync();
@@ -90,20 +95,21 @@ namespace SmartVoiceNotes.Infrastructure
 
             if (!doc.RootElement.TryGetProperty("candidates", out var candidates) || candidates.GetArrayLength() == 0)
             {
-                throw new Exception("AI içerik güvenliği nedeniyle yanıt vermedi.");
+                throw new InvalidOperationException("Gemini AI content safety policy prevented response generation. The input may contain restricted content.");
             }
 
 
             // Parsing the nested JSON response from Gemini
             var geminiText = doc.RootElement.GetProperty("candidates")[0]
                 .GetProperty("content").GetProperty("parts")[0]
-                .GetProperty("text").GetString();
+                .GetProperty("text").GetString()
+                ?? throw new InvalidOperationException("Gemini API returned null text in response.");
 
             return new ProcessResponseDto
             {
                 
                 Summary = geminiText,
-                QuizQuestions = new List<string>(), //empty
+                QuizQuestions = new List<string>(),
                 OriginalTranscription = text
             };
 
