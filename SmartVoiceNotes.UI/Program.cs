@@ -11,8 +11,9 @@ namespace SmartVoiceNotes.UI
             builder.RootComponents.Add<App>("#app");
             builder.RootComponents.Add<HeadOutlet>("head::after");
 
-            builder.Services.AddScoped(sp => new HttpClient {
-                BaseAddress = new Uri("https://localhost:7178"),
+            builder.Services.AddScoped(sp => new HttpClient
+            {
+                BaseAddress = new Uri("https://smartsummary-dvhfh9bucqbnbydm.switzerlandnorth-01.azurewebsites.net/"),
                 Timeout = TimeSpan.FromMinutes(5)
             });
 
