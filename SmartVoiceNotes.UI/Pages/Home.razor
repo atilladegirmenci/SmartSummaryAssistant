@@ -250,7 +250,6 @@
         }
     }
 </div>
-
 @code {
     private bool isProcessing = false;
     private string? errorMessage;
@@ -259,18 +258,7 @@
     private string activeTab = "file";
     private string youtubeUrl = "";
     private IBrowserFile? selectedFile;
-
-    // Kullanıcı tercihleri
     private AnalysisPreferences preferences = new AnalysisPreferences();
-
-    // Cobalt Sunucuları (Frontend'den çağıracağız)
-    private readonly string[] cobaltInstances = new[]
-    {
-        "https://co.wuk.sh/api/json",      // En popüleri
-        "https://api.cobalt.tools/api/json",
-        "https://cobalt.api.sc/api/json",
-        "https://api.gsc.sh/api/json"
-    };
 
     private void HandleFileSelection(InputFileChangeEventArgs e)
     {
@@ -285,12 +273,10 @@
             errorMessage = "Please select a file first.";
             return;
         }
-
-        // Dosya seçili ise direkt yükleme metoduna gönder
+        // 500MB Limit
         await UploadFileToBackend(selectedFile.OpenReadStream(500L * 1024 * 1024), selectedFile.Name, selectedFile.ContentType);
     }
 
-    // YENİ: YouTube İşlemi (Frontend -> Cobalt -> Backend Upload)
     private async Task HandleYoutubeSubmit()
     {
         if (string.IsNullOrWhiteSpace(youtubeUrl))
@@ -306,28 +292,33 @@
 
         try
         {
-            // 1. ADIM: Cobalt API'den indirme linkini al
-            string? downloadUrl = await GetCobaltDownloadUrl(youtubeUrl);
+            // 1. ADIM: Backend'e sor -> "Bana indirme linkini bul" (Proxy)
+            var linkRequest = new { Url = youtubeUrl };
+            var linkResponse = await Http.PostAsJsonAsync("api/AudioProcess/get-youtube-link", linkRequest);
 
-            if (string.IsNullOrEmpty(downloadUrl))
+            if (!linkResponse.IsSuccessStatusCode)
             {
-                errorMessage = "Could not get download link. Please try again or check the URL.";
-                return;
+                var error = await linkResponse.Content.ReadAsStringAsync();
+                throw new Exception($"Link alınamadı: {error}");
             }
 
-            // 2. ADIM: Dosyayı tarayıcı hafızasına indir (Client-Side)
-            // Not: Tarayıcı bunu kendi IP'si ile yapar, Azure engeline takılmaz!
-            var audioBytes = await Http.GetByteArrayAsync(downloadUrl);
+            var linkResult = await linkResponse.Content.ReadFromJsonAsync<YoutubeLinkResult>();
+            if (string.IsNullOrEmpty(linkResult?.DownloadUrl))
+            {
+                throw new Exception("Sunucu boş link döndü.");
+            }
+
+            // 2. ADIM: Tarayıcı o linkten dosyayı indirir (RAM'e)
+            // Bu işlem kullanıcının internetiyle yapılır, Azure karışmaz.
+            var audioBytes = await Http.GetByteArrayAsync(linkResult.DownloadUrl);
             var memoryStream = new MemoryStream(audioBytes);
 
-            // 3. ADIM: Backend'deki 'Upload' metoduna gönder
-            // Sanki kullanıcı bilgisayardan dosya seçmiş gibi davranıyoruz.
+            // 3. ADIM: İnen dosyayı Backend'e geri yükle (Process)
             await UploadFileToBackend(memoryStream, "youtube_audio.mp3", "audio/mpeg");
-
         }
         catch (Exception ex)
         {
-            errorMessage = $"Processing Error: {ex.Message}";
+            errorMessage = $"İşlem Hatası: {ex.Message}";
         }
         finally
         {
@@ -335,59 +326,6 @@
         }
     }
 
-    // Yardımcı Metot: Cobalt API'leri dener
-    private async Task<string?> GetCobaltDownloadUrl(string url)
-    {
-        var requestBody = new
-        {
-            url = url,
-            aFormat = "mp3",
-            isAudioOnly = true,
-            filenamePattern = "classic"
-        };
-
-        foreach (var apiUrl in cobaltInstances)
-        {
-            try
-            {
-                var request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
-                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                // Tarayıcı başlıkları (CORS için önemli olabilir)
-                request.Headers.Add("Origin", "https://cobalt.tools");
-
-                request.Content = new StringContent(
-                    JsonSerializer.Serialize(requestBody),
-                    System.Text.Encoding.UTF8,
-                    "application/json");
-
-                var response = await Http.SendAsync(request);
-
-                if (!response.IsSuccessStatusCode) continue;
-
-                var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-
-                if (json.TryGetProperty("url", out var urlProp))
-                {
-                    return urlProp.GetString();
-                }
-                else if (json.TryGetProperty("picker", out var pickerProp))
-                {
-                    foreach (var item in pickerProp.EnumerateArray())
-                    {
-                        if (item.TryGetProperty("url", out var pickUrl))
-                            return pickUrl.GetString();
-                    }
-                }
-            }
-            catch
-            {
-                continue; // Bir sonraki sunucuyu dene
-            }
-        }
-        return null;
-    }
-
-    // Yardımcı Metot: Backend'e Dosya Yükleme (Ortak Kullanım)
     private async Task UploadFileToBackend(Stream fileStream, string fileName, string contentType)
     {
         isProcessing = true;
@@ -399,7 +337,6 @@
 
             content.Add(streamContent, "file", fileName);
 
-            // URL Parametrelerini oluştur
             var url = $"api/AudioProcess/upload?" +
                       $"language={preferences.Language}&" +
                       $"sourceType={preferences.SourceType}&" +
@@ -417,16 +354,16 @@
             else
             {
                 var errorMsg = await response.Content.ReadAsStringAsync();
-                errorMessage = $"Error: {response.StatusCode} - {errorMsg}";
+                errorMessage = $"Upload Error: {response.StatusCode} - {errorMsg}";
             }
         }
         catch (Exception ex)
         {
-            errorMessage = $"Upload Error: {ex.Message}";
+            errorMessage = $"Connection Error: {ex.Message}";
         }
         finally
         {
-            isProcessing = false; // UploadFileToBackend içinde de kapatıyoruz
+            isProcessing = false;
         }
     }
 
@@ -461,8 +398,13 @@
         public string Summary { get; set; }
         public List<string> QuizQuestions { get; set; }
     }
+
+    public class YoutubeLinkResult
+    {
+        public string DownloadUrl { get; set; }
+    }
 }
-}
+
 <style>
     .form-select, .form-control {
         background-color: #e0e0e0 !important; 

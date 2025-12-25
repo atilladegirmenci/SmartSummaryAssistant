@@ -78,24 +78,90 @@ namespace SmartVoiceNotes.API.Controllers
                 return StatusCode(500, $"General error: {ex.Message}");
             }
         }
-        [HttpPost("process-youtube")]
-        public async Task<IActionResult> ProcessYoutube([FromQuery] string url, [FromQuery] string language, [FromQuery] string sourceType, [FromQuery] string style, [FromQuery] bool includeQuiz, [FromQuery] short qCount)
+        // tihs method finds the link to download mp3 from youtube using cobalt api. does not downloads the file, only gets the link
+        [HttpPost("get-youtube-link")]
+        public async Task<IActionResult> GetYoutubeLink([FromBody] YoutubeLinkRequest request)
         {
-            if (string.IsNullOrWhiteSpace(url))
-                return BadRequest("YouTube URL cannot be empty");
+            if (string.IsNullOrWhiteSpace(request.Url))
+                return BadRequest("URL cannot be empty");
 
-            try
+            // Cobalt Sunucu Listesi
+            var cobaltInstances = new[]
             {
-                var transcription = await _transcriptionService.TranscribeYoutubeAsync(url);
+                "https://co.wuk.sh/api/json",      // 1. Tercih
+                "https://api.cobalt.tools/api/json",
+                "https://cobalt.api.sc/api/json",
+                "https://api.gsc.sh/api/json"
+            };
 
-                var resultDto = await _summaryService.SummarizeTextAsync(transcription,language,sourceType,style,includeQuiz,qCount,true);
+            using var client = new HttpClient();
+            // Backend'den API'ye giderken Tarayıcı taklidi yapıyoruz
+            client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
+            client.DefaultRequestHeaders.Add("Origin", "https://cobalt.tools");
+            client.DefaultRequestHeaders.Add("Referer", "https://cobalt.tools/");
+            client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
 
-                return Ok(resultDto);
-            }
-            catch (Exception ex)
+            foreach (var apiUrl in cobaltInstances)
             {
-                return StatusCode(500, $"process error: {ex.Message}");
+                try
+                {
+                    var requestBody = new
+                    {
+                        url = request.Url,
+                        aFormat = "mp3",
+                        isAudioOnly = true,
+                        filenamePattern = "classic"
+                    };
+
+                    var jsonContent = new StringContent(
+                        JsonSerializer.Serialize(requestBody),
+                        System.Text.Encoding.UTF8,
+                        "application/json");
+
+                    var response = await client.PostAsync(apiUrl, jsonContent);
+
+                    if (!response.IsSuccessStatusCode) continue;
+
+                    var jsonString = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(jsonString);
+
+                    string downloadUrl = null;
+
+                    if (doc.RootElement.TryGetProperty("url", out JsonElement urlElement))
+                    {
+                        downloadUrl = urlElement.GetString();
+                    }
+                    else if (doc.RootElement.TryGetProperty("picker", out JsonElement pickerElement))
+                    {
+                        foreach (var item in pickerElement.EnumerateArray())
+                        {
+                            if (item.TryGetProperty("url", out JsonElement pickUrl))
+                            {
+                                downloadUrl = pickUrl.GetString();
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(downloadUrl))
+                    {
+                        // Başarılı linki Frontend'e dönüyoruz
+                        return Ok(new { downloadUrl });
+                    }
+                }
+                catch
+                {
+                    continue;
+                }
             }
+
+            return StatusCode(500, "Cobalt API link üretemedi. Lütfen daha sonra tekrar deneyin.");
+        }
+
+        // DTO Class (Dosyanın en altına veya uygun yere ekle)
+        public class YoutubeLinkRequest
+        {
+            public string Url { get; set; }
         }
     }
 }
