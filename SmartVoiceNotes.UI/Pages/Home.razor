@@ -260,6 +260,16 @@
     private IBrowserFile? selectedFile;
     private AnalysisPreferences preferences = new AnalysisPreferences();
 
+    // CORS destekleyen Piped API Listesi (Frontend'den erişilebilir)
+    private readonly string[] pipedInstances = new[]
+    {
+        "https://pipedapi.kavin.rocks",      // Ana sunucu
+        "https://api.piped.otter.sh",        // Çok hızlı
+        "https://pipedapi.drgns.space",
+        "https://pa.il.ax",
+        "https://pipedapi.smnz.de"
+    };
+
     private void HandleFileSelection(InputFileChangeEventArgs e)
     {
         selectedFile = e.File;
@@ -273,10 +283,10 @@
             errorMessage = "Please select a file first.";
             return;
         }
-        // 500MB Limit
         await UploadFileToBackend(selectedFile.OpenReadStream(500L * 1024 * 1024), selectedFile.Name, selectedFile.ContentType);
     }
 
+    // YOUTUBE İŞLEMİ (TAMAMEN CLIENT-SIDE)
     private async Task HandleYoutubeSubmit()
     {
         if (string.IsNullOrWhiteSpace(youtubeUrl))
@@ -292,29 +302,23 @@
 
         try
         {
-            // 1. ADIM: Backend'e sor -> "Bana indirme linkini bul" (Proxy)
-            var linkRequest = new { Url = youtubeUrl };
-            var linkResponse = await Http.PostAsJsonAsync("api/AudioProcess/get-youtube-link", linkRequest);
+            // 1. Video ID'sini bul
+            string videoId = ExtractVideoId(youtubeUrl);
+            if (string.IsNullOrEmpty(videoId)) throw new Exception("Geçersiz YouTube linki.");
 
-            if (!linkResponse.IsSuccessStatusCode)
-            {
-                var error = await linkResponse.Content.ReadAsStringAsync();
-                throw new Exception($"Link alınamadı: {error}");
-            }
+            // 2. Piped API'den ses linkini bul (Tarayıcıdan istek atıyoruz)
+            string? downloadUrl = await GetStreamUrlFromFrontend(videoId);
 
-            var linkResult = await linkResponse.Content.ReadFromJsonAsync<YoutubeLinkResult>();
-            if (string.IsNullOrEmpty(linkResult?.DownloadUrl))
-            {
-                throw new Exception("Sunucu boş link döndü.");
-            }
+            if (string.IsNullOrEmpty(downloadUrl))
+                throw new Exception("Video kaynağı bulunamadı veya erişilemiyor.");
 
-            // 2. ADIM: Tarayıcı o linkten dosyayı indirir (RAM'e)
-            // Bu işlem kullanıcının internetiyle yapılır, Azure karışmaz.
-            var audioBytes = await Http.GetByteArrayAsync(linkResult.DownloadUrl);
+            // 3. Dosyayı indir (Browser Memory)
+            var audioBytes = await Http.GetByteArrayAsync(downloadUrl);
             var memoryStream = new MemoryStream(audioBytes);
 
-            // 3. ADIM: İnen dosyayı Backend'e geri yükle (Process)
+            // 4. Backend'e yükle ve işle
             await UploadFileToBackend(memoryStream, "youtube_audio.mp3", "audio/mpeg");
+
         }
         catch (Exception ex)
         {
@@ -326,6 +330,56 @@
         }
     }
 
+    // Frontend'den Piped API'ye istek atan metot
+    private async Task<string?> GetStreamUrlFromFrontend(string videoId)
+    {
+        foreach (var instance in pipedInstances)
+        {
+            try
+            {
+                // Piped API: /streams/{videoId}
+                var apiUrl = $"{instance}/streams/{videoId}";
+
+                // Blazor HttpClient ile istek at (Tarayıcı fetch kullanır)
+                var streamInfo = await Http.GetFromJsonAsync<JsonElement>(apiUrl);
+
+                // JSON'dan audioStreams dizisini bul
+                if (streamInfo.TryGetProperty("audioStreams", out var audioStreams))
+                {
+                    foreach (var stream in audioStreams.EnumerateArray())
+                    {
+                        // M4A veya MP3 formatını bul
+                        if (stream.TryGetProperty("url", out var urlEl))
+                        {
+                            // İlk bulduğumuz ses dosyasını alıyoruz (Genelde en kalitelisi ilki olur)
+                            return urlEl.GetString();
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Bu sunucu CORS hatası verirse veya çökmüşse diğerini dene
+                continue;
+            }
+        }
+        return null;
+    }
+
+    private string ExtractVideoId(string url)
+    {
+        try
+        {
+            var uri = new Uri(url);
+            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+            if (query.AllKeys.Contains("v")) return query["v"];
+            if (uri.Host.Contains("youtu.be")) return uri.AbsolutePath.Trim('/');
+        }
+        catch { }
+        return null;
+    }
+
+    // Ortak Upload Metodu
     private async Task UploadFileToBackend(Stream fileStream, string fileName, string contentType)
     {
         isProcessing = true;
@@ -354,16 +408,12 @@
             else
             {
                 var errorMsg = await response.Content.ReadAsStringAsync();
-                errorMessage = $"Upload Error: {response.StatusCode} - {errorMsg}";
+                errorMessage = $"Error: {response.StatusCode} - {errorMsg}";
             }
         }
         catch (Exception ex)
         {
-            errorMessage = $"Connection Error: {ex.Message}";
-        }
-        finally
-        {
-            isProcessing = false;
+            errorMessage = $"Upload Error: {ex.Message}";
         }
     }
 
@@ -397,11 +447,6 @@
         public string OriginalTranscription { get; set; }
         public string Summary { get; set; }
         public List<string> QuizQuestions { get; set; }
-    }
-
-    public class YoutubeLinkResult
-    {
-        public string DownloadUrl { get; set; }
     }
 }
 
