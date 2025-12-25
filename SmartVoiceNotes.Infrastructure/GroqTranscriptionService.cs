@@ -24,40 +24,58 @@ namespace SmartVoiceNotes.Infrastructure
         }
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
-            var youtube = new YoutubeClient();
+            // 1. "BEN TARAYICIYIM" MASKESİ (User-Agent Spoofing)
+            // Azure IP'leri engellendiği için, isteği sanki gerçek bir Chrome tarayıcısı yapıyormuş gibi gösteriyoruz.
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            httpClient.DefaultRequestHeaders.Add("Referer", "https://www.youtube.com/");
+
+            var youtube = new YoutubeClient(httpClient);
 
             try
             {
+                // Video bilgilerini al
                 var video = await youtube.Videos.GetAsync(youtubeUrl);
-                var title = video.Title; 
 
+                // Manifest (akış) bilgilerini al
                 var streamManifest = await youtube.Videos.Streams.GetManifestAsync(youtubeUrl);
 
-                // get audio only
+                // Sadece ses akışını al (En yüksek kalite)
                 var streamInfo = streamManifest.GetAudioOnlyStreams().GetWithHighestBitrate();
 
                 if (streamInfo == null)
-                    throw new Exception("Audio stream could not found.");
+                    throw new Exception("Audio stream could not found (Manifest empty).");
 
+                // Geçici dosya yolu
                 var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.mp3");
 
+                // İndirme işlemi
                 await youtube.Videos.Streams.DownloadAsync(streamInfo, tempFilePath);
 
                 try
                 {
                     using (var stream = File.OpenRead(tempFilePath))
                     {
+                        // İndirilen dosyayı ses analizine gönder
                         return await TranscribeAudioAsync(stream, "youtube_audio.mp3");
                     }
                 }
                 finally
                 {
-                    if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
+                    // Temizlik
+                    if (File.Exists(tempFilePath))
+                    {
+                        try { File.Delete(tempFilePath); } catch { /* Silinemezse logla ama patlatma */ }
+                    }
                 }
+            }
+            catch (YoutubeExplode.Exceptions.VideoUnavailableException)
+            {
+                throw new Exception("YouTube says 'Video Unavailable'. This is likely an IP ban on Azure servers. Try a different video or wait.");
             }
             catch (Exception ex)
             {
-                throw new Exception($"Could not finish: {ex.Message}");
+                throw new Exception($"YouTube Process Error: {ex.Message}");
             }
         }
         public async Task<string> TranscribeAudioAsync(Stream audioStream, string fileName)
