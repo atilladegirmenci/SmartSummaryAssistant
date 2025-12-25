@@ -9,7 +9,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SmartVoiceNotes.Infrastruct
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SmartVoiceNotes.API", "SmartVoiceNotes.API\SmartVoiceNotes.API.csproj", "{BFCEDAEB-466E-4962-A607-9B727885BFC8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartVoiceNotes.UI", "SmartVoiceNotes.UI\SmartVoiceNotes.UI.csproj", "{E553D235-4BDD-4A16-A886-77CAD70F5B26}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SmartVoiceNotes.UI", "SmartVoiceNotes.UI\SmartVoiceNotes.UI.csproj", "{E553D235-4BDD-4A16-A886-77CAD70F5B26}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
