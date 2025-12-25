@@ -1,0 +1,59 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "SmartVoiceNotes.Core/1.0.0": {
+        "dependencies": {
+          "YoutubeDLSharp": "1.1.2"
+        },
+        "runtime": {
+          "SmartVoiceNotes.Core.dll": {}
+        }
+      },
+      "Newtonsoft.Json/13.0.3": {
+        "runtime": {
+          "lib/net6.0/Newtonsoft.Json.dll": {
+            "assemblyVersion": "13.0.0.0",
+            "fileVersion": "13.0.3.27908"
+          }
+        }
+      },
+      "YoutubeDLSharp/1.1.2": {
+        "dependencies": {
+          "Newtonsoft.Json": "13.0.3"
+        },
+        "runtime": {
+          "lib/net8.0/YoutubeDLSharp.dll": {
+            "assemblyVersion": "1.1.2.25113",
+            "fileVersion": "1.1.2.25113"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "SmartVoiceNotes.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Newtonsoft.Json/13.0.3": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ==",
+      "path": "newtonsoft.json/13.0.3",
+      "hashPath": "newtonsoft.json.13.0.3.nupkg.sha512"
+    },
+    "YoutubeDLSharp/1.1.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-PYcZLUqayicAHsi9k0Uprkd0I54hCTZ41pbwslT4QE7CwlceXv+gZr5nMKsifPOeYXwzgOvf1YmQF4W4uklzeA==",
+      "path": "youtubedlsharp/1.1.2",
+      "hashPath": "youtubedlsharp.1.1.2.nupkg.sha512"
+    }
+  }
+}
