@@ -85,41 +85,31 @@ namespace SmartVoiceNotes.API.Controllers
             if (string.IsNullOrWhiteSpace(request.Url))
                 return BadRequest("URL cannot be empty");
 
-            // Cobalt Sunucu Listesi
-            var cobaltInstances = new[]
+            // Video ID'sini bul (Piped API, ID ile çalışır)
+            string videoId = ExtractVideoId(request.Url);
+            if (string.IsNullOrEmpty(videoId))
+                return BadRequest("Geçersiz YouTube linki.");
+
+            // Piped ve Invidious Sunucu Listesi (Azure dostu olanlar)
+            var apiInstances = new[]
             {
-                "https://co.wuk.sh/api/json",      // 1. Tercih
-                "https://api.cobalt.tools/api/json",
-                "https://cobalt.api.sc/api/json",
-                "https://api.gsc.sh/api/json"
+                $"https://pipedapi.kavin.rocks/streams/{videoId}",     // En sağlamı
+                $"https://api.piped.otter.sh/streams/{videoId}",      // Yedek 1
+                $"https://pipedapi.drgns.space/streams/{videoId}",    // Yedek 2
+                $"https://inv.tux.pizza/api/v1/videos/{videoId}",     // Invidious Alternatifi
+                $"https://vid.uff.net/api/v1/videos/{videoId}"        // Invidious Yedek
             };
 
             using var client = new HttpClient();
-            // Backend'den API'ye giderken Tarayıcı taklidi yapıyoruz
+            // Tarayıcı taklidi (Önemli)
             client.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36");
-            client.DefaultRequestHeaders.Add("Origin", "https://cobalt.tools");
-            client.DefaultRequestHeaders.Add("Referer", "https://cobalt.tools/");
-            client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+            client.Timeout = TimeSpan.FromSeconds(10); // Hızlı pes etsin, sıradakine geçsin
 
-            foreach (var apiUrl in cobaltInstances)
+            foreach (var apiUrl in apiInstances)
             {
                 try
                 {
-                    var requestBody = new
-                    {
-                        url = request.Url,
-                        aFormat = "mp3",
-                        isAudioOnly = true,
-                        filenamePattern = "classic"
-                    };
-
-                    var jsonContent = new StringContent(
-                        JsonSerializer.Serialize(requestBody),
-                        System.Text.Encoding.UTF8,
-                        "application/json");
-
-                    var response = await client.PostAsync(apiUrl, jsonContent);
-
+                    var response = await client.GetAsync(apiUrl);
                     if (!response.IsSuccessStatusCode) continue;
 
                     var jsonString = await response.Content.ReadAsStringAsync();
@@ -127,41 +117,87 @@ namespace SmartVoiceNotes.API.Controllers
 
                     string downloadUrl = null;
 
-                    if (doc.RootElement.TryGetProperty("url", out JsonElement urlElement))
+                    // 1. PIPED API Mantığı
+                    if (apiUrl.Contains("piped"))
                     {
-                        downloadUrl = urlElement.GetString();
-                    }
-                    else if (doc.RootElement.TryGetProperty("picker", out JsonElement pickerElement))
-                    {
-                        foreach (var item in pickerElement.EnumerateArray())
+                        if (doc.RootElement.TryGetProperty("audioStreams", out JsonElement audioStreams))
                         {
-                            if (item.TryGetProperty("url", out JsonElement pickUrl))
+                            // En yüksek kaliteli ses dosyasını bul (m4a veya mp3)
+                            foreach (var stream in audioStreams.EnumerateArray())
                             {
-                                downloadUrl = pickUrl.GetString();
-                                break;
+                                if (stream.TryGetProperty("url", out JsonElement urlEl))
+                                {
+                                    downloadUrl = urlEl.GetString();
+                                    // İlk bulduğunu al ve kaç (Genelde en iyisi ilki olur)
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    // 2. INVIDIOUS API Mantığı
+                    else
+                    {
+                        if (doc.RootElement.TryGetProperty("adaptiveFormats", out JsonElement formats))
+                        {
+                            foreach (var format in formats.EnumerateArray())
+                            {
+                                // Sadece ses olan ve audio/mp4 olanı bul
+                                if (format.TryGetProperty("type", out JsonElement typeEl) && typeEl.GetString().Contains("audio/mp4"))
+                                {
+                                    if (format.TryGetProperty("url", out JsonElement urlEl))
+                                    {
+                                        downloadUrl = urlEl.GetString();
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
 
                     if (!string.IsNullOrEmpty(downloadUrl))
                     {
-                        // Başarılı linki Frontend'e dönüyoruz
                         return Ok(new { downloadUrl });
                     }
                 }
                 catch
                 {
-                    continue;
+                    continue; // Sıradaki sunucuyu dene
                 }
             }
 
-            return StatusCode(500, "Cobalt API link üretemedi. Lütfen daha sonra tekrar deneyin.");
+            return StatusCode(500, "Hiçbir API sunucusundan link alınamadı. (Piped/Invidious Fail)");
         }
 
-        // DTO Class (Dosyanın en altına veya uygun yere ekle)
+        // Yardımcı Metot: YouTube ID'sini Linkten Söker
+        private string ExtractVideoId(string url)
+        {
+            try
+            {
+                var uri = new Uri(url);
+                var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+
+                // "v" parametresine bak (youtube.com/watch?v=...)
+                if (query.AllKeys.Contains("v"))
+                {
+                    return query["v"];
+                }
+
+                // Kısa linklere bak (youtu.be/...)
+                if (uri.Host.Contains("youtu.be"))
+                {
+                    return uri.AbsolutePath.Trim('/');
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        // DTO Class
         public class YoutubeLinkRequest
         {
             public string Url { get; set; }
         }
+
+        
     }
 }
