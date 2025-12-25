@@ -11,7 +11,7 @@ namespace SmartVoiceNotes.API.Controllers
     {
         private readonly ITranscriptionService _transcriptionService;
         private readonly IAiSummaryService _summaryService;
-        private readonly IConfiguration _configuration; // Şifreleri okumak için
+        private readonly IConfiguration _configuration; 
 
         public AudioProcessController(ITranscriptionService transcriptionService, IAiSummaryService summaryService, IConfiguration configuration)
         {
@@ -79,67 +79,90 @@ namespace SmartVoiceNotes.API.Controllers
         {
             if (string.IsNullOrWhiteSpace(url)) return BadRequest("URL cannot be empty");
 
-            // Video ID'sini bul
+            string rapidApiKey = _configuration["RapidApiKey"];
+            if (string.IsNullOrEmpty(rapidApiKey)) rapidApiKey = Environment.GetEnvironmentVariable("RapidApiKey");
+            if (string.IsNullOrEmpty(rapidApiKey)) return StatusCode(500, "Server Config Error: 'RapidApiKey' bulunamadı.");
+
             string videoId = ExtractVideoId(url);
             if (string.IsNullOrEmpty(videoId)) return BadRequest("Invalid YouTube URL");
-
-            // API Key'i Azure Ayarlarından (veya appsettings.json'dan) oku
-            string rapidApiKey = _configuration["RapidApiKey"];
-            if (string.IsNullOrEmpty(rapidApiKey))
-            {
-                return StatusCode(500, "Server Config Error: 'RapidApiKey' bulunamadı.");
-            }
 
             var tempFilePath = Path.GetTempFileName();
             var mp3Path = Path.ChangeExtension(tempFilePath, ".mp3");
 
             try
             {
-                // 1. RAPID API'den İndirme Linkini Al
                 string downloadUrl = "";
-                using (var client = new HttpClient())
+                string apiResponseBody = "";
+
+                // --- RETRY MECHANISM ---
+                int maxRetries = 3; 
+                int delaySeconds = 2; 
+
+                for (int i = 0; i < maxRetries; i++)
                 {
-                    var request = new HttpRequestMessage
+                    using (var client = new HttpClient())
                     {
-                        Method = HttpMethod.Get,
-                        // RapidAPI: YouTube MP36 Endpoint
-                        RequestUri = new Uri($"https://youtube-mp36.p.rapidapi.com/dl?id={videoId}"),
-                        Headers =
+                        var request = new HttpRequestMessage
                         {
-                            { "X-RapidAPI-Key", rapidApiKey },
-                            { "X-RapidAPI-Host", "youtube-mp36.p.rapidapi.com" },
-                        },
-                    };
+                            Method = HttpMethod.Get,
+                            RequestUri = new Uri($"https://youtube-mp36.p.rapidapi.com/dl?id={videoId}"),
+                            Headers =
+                            {
+                                { "X-RapidAPI-Key", rapidApiKey },
+                                { "X-RapidAPI-Host", "youtube-mp36.p.rapidapi.com" },
+                            },
+                        };
 
-                    using (var response = await client.SendAsync(request))
-                    {
-                        if (!response.IsSuccessStatusCode)
+                        using (var response = await client.SendAsync(request))
                         {
-                            var err = await response.Content.ReadAsStringAsync();
-                            return StatusCode(500, $"RapidAPI Hatası: {response.StatusCode}. Detay: {err}");
+                            if (response.IsSuccessStatusCode)
+                            {
+                                apiResponseBody = await response.Content.ReadAsStringAsync();
+                                using var doc = JsonDocument.Parse(apiResponseBody);
+
+                                // TRY TO EXTRACT LINK
+                                if (doc.RootElement.TryGetProperty("link", out JsonElement linkEl) &&
+                                    !string.IsNullOrWhiteSpace(linkEl.GetString()))
+                                {
+                                    downloadUrl = linkEl.GetString();
+                                    break; 
+                                }
+                                else if (doc.RootElement.TryGetProperty("url", out JsonElement urlEl) &&
+                                         !string.IsNullOrWhiteSpace(urlEl.GetString()))
+                                {
+                                    downloadUrl = urlEl.GetString();
+                                    break; 
+                                }
+                            }
                         }
+                    }
 
-                        var body = await response.Content.ReadAsStringAsync();
-                        using var doc = JsonDocument.Parse(body);
-
-                        // API yanıtını kontrol et (link veya url dönebilir)
-                        if (doc.RootElement.TryGetProperty("link", out JsonElement linkEl))
-                            downloadUrl = linkEl.GetString();
-                        else if (doc.RootElement.TryGetProperty("url", out JsonElement urlEl))
-                            downloadUrl = urlEl.GetString();
-                        else
-                            return StatusCode(500, "RapidAPI geçerli bir indirme linki döndürmedi.");
+                    
+                    // if we reach here, it means the attempt failed. if this is not the last attempt, wait before retrying
+                    if (i < maxRetries - 1)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
                     }
                 }
+                // --- RETRY END ---
 
-                // 2. Dosyayı RapidAPI sunucusundan indir (Azure -> RapidAPI)
+                if (string.IsNullOrWhiteSpace(downloadUrl))
+                {
+                    return StatusCode(500, $"API {maxRetries} denemeye rağmen link üretemedi. Son Yanıt: {apiResponseBody}");
+                }
+
+                if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var validatedUri))
+                {
+                    return StatusCode(500, $"RapidAPI bozuk link döndürdü: {downloadUrl}");
+                }
+
+                // download the and process
                 using (var client = new HttpClient())
                 {
-                    var fileBytes = await client.GetByteArrayAsync(downloadUrl);
+                    var fileBytes = await client.GetByteArrayAsync(validatedUri);
                     await System.IO.File.WriteAllBytesAsync(mp3Path, fileBytes);
                 }
 
-                // 3. Dosyayı İşle (Groq + Gemini)
                 using (var stream = System.IO.File.OpenRead(mp3Path))
                 {
                     var transcription = await _transcriptionService.TranscribeAudioAsync(stream, "youtube_audio.mp3");
@@ -153,7 +176,6 @@ namespace SmartVoiceNotes.API.Controllers
             }
             finally
             {
-                // Temizlik
                 if (System.IO.File.Exists(mp3Path)) System.IO.File.Delete(mp3Path);
                 if (System.IO.File.Exists(tempFilePath)) System.IO.File.Delete(tempFilePath);
             }

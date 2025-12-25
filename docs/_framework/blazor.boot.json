@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "SmartVoiceNotes.UI",
   "resources": {
-    "hash": "sha256-3yKi5xvdbEnjToM1wHsWLmzMR8yXAFSEDv9ZAN7cxdg=",
+    "hash": "sha256-76I0s5HlwjLHNre/64eOZLXjT1sT49LVQE8tQItq7lE=",
     "jsModuleNative": {
       "dotnet.native.8.0.5.a7keqal8sz.js": "sha256-boyHe+0RMZDkzBKGhsrnXPhPg3oZ6UqJnTUzngJPjNY="
     },
@@ -32,7 +32,7 @@
       "Microsoft.Extensions.Primitives.wasm": "sha256-6187ynEahDlSLMBvD4vAmiLpZ3clRb5xu6rM7O8AxNo=",
       "Microsoft.JSInterop.wasm": "sha256-psv4A3pBPmn3fv9Mf8Yv5HDErRoCTHh7L+3cXHL+IZ4=",
       "Microsoft.JSInterop.WebAssembly.wasm": "sha256-ZyIqQss3I64BQC2gc7JEDrkYq14vXKEXuw5vBJ5oFYM=",
-      "SmartVoiceNotes.UI.wasm": "sha256-b/P82z1Ab6ydb628XGTgmctyMYyD2zGMh6gzIYkaNv4=",
+      "SmartVoiceNotes.UI.wasm": "sha256-4r1E9mghcm/qg9G5bxAxaHJh8HrhnGWghi3t+UQ6M5w=",
       "System.Collections.Concurrent.wasm": "sha256-bKMThiDe8ztQp3qcZa1GlDV8fn81Cu6Ifrn9koOTdlc=",
       "System.Collections.Immutable.wasm": "sha256-NTgxftsKoOkMWVGxCnJYNneoxKwIDiBSIDIE3oUotxA=",
       "System.Collections.wasm": "sha256-viqBNdBEcKt592zaoZ0AAymsk75UY9cjBYCPbL5sWP0=",
