@@ -6,6 +6,8 @@ using SmartVoiceNotes.Core.Interfaces;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace SmartVoiceNotes.Infrastructure
 {
@@ -18,6 +20,7 @@ namespace SmartVoiceNotes.Infrastructure
         {
             _httpClient = httpClient;
             _apiKey = configuration["AiSettings:GroqApiKey"];
+            ConfigureFFmpeg();
         }
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
@@ -185,6 +188,49 @@ namespace SmartVoiceNotes.Infrastructure
             var jsonResponse = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(jsonResponse);
             return doc.RootElement.GetProperty("text").GetString();
+        }
+        private void ConfigureFFmpeg()
+        {
+            try
+            {
+                // 1. Çalışan uygulamanın ana dizinini bul
+                var appRoot = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
+
+                // 2. ffmpeg klasörünü belirle (/home/site/wwwroot/ffmpeg)
+                var ffmpegFolder = Path.Combine(appRoot, "ffmpeg");
+
+                // Klasör yoksa loglara düşmesi için veya alternatif yollara bakılabilir
+                if (!Directory.Exists(ffmpegFolder))
+                {
+                    Console.WriteLine($"WARNING: FFmpeg folder not found at {ffmpegFolder}");
+                }
+
+                // 3. FFMpegCore kütüphanesine "Dosyalar burada!" de.
+                GlobalFFOptions.Configure(new FFOptions { BinaryFolder = ffmpegFolder });
+
+                // 4. Linux İzinleri (chmod +x) - Çok Kritik!
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    // ffmpeg dosyası
+                    var ffmpegBinary = Path.Combine(ffmpegFolder, "ffmpeg");
+                    if (File.Exists(ffmpegBinary))
+                    {
+                        System.Diagnostics.Process.Start("chmod", $"+x \"{ffmpegBinary}\"").WaitForExit();
+                    }
+
+                    // ffprobe dosyası
+                    var ffprobeBinary = Path.Combine(ffmpegFolder, "ffprobe");
+                    if (File.Exists(ffprobeBinary))
+                    {
+                        System.Diagnostics.Process.Start("chmod", $"+x \"{ffprobeBinary}\"").WaitForExit();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Hata olsa bile uygulama çökmesin, loglayıp devam etsin
+                Console.WriteLine($"FFmpeg Setup Error: {ex.Message}");
+            }
         }
     }
 }
