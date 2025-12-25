@@ -76,50 +76,58 @@ namespace SmartVoiceNotes.Infrastructure
 
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
-            // yt-dlp'yi başlatıyoruz
             var ytdl = new YoutubeDL();
             ytdl.YoutubeDLPath = _ytDlpPath;
             ytdl.FFmpegPath = _ffmpegPath;
 
-            // Geçici dosya yolu
             var tempFolder = Path.GetTempPath();
-            var outputFileName = $"{Guid.NewGuid()}.mp3";
-            var outputFilePath = Path.Combine(tempFolder, outputFileName);
+            var outputFileName = $"{Guid.NewGuid()}.%(ext)s";
+            var outputFilePathTemplate = Path.Combine(tempFolder, outputFileName);
 
             try
             {
-                // İndirme Ayarları (En iyi ses kalitesi)
+                // 1. COOKIE VE USER-AGENT AYARLARI
+                // Burası YouTube'un "Sen botsun" engelini aşmamızı sağlayan yer.
+                var myCookie = "APISID=oA3yIrFqesCGFEaE/AJgO9yECOWl8Q34bg; SAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; __Secure-1PAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; __Secure-3PAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; SID=g.a0004AiReczUP6V63CXZNobS9Zua8S1xdafSr5ZEgtXlckJz-BBoe1b72DTmQ_tXuKWA5t0q0gACgYKAbsSARESFQHGX2MiLoTQQ9IvrFKXeWjKHo2foxoVAUF8yKrWK4DwzI0pGLDR371V3e9b0076; PREF=f6=40000000&f7=4150&tz=Europe.Istanbul&f5=30000&repeat=NONE; wide=1; SIDCC=AKEyXzVGd2NL3VeSCQ-0cdG3w_PD5QzUsQsAClGs8F78RR6KEMi6cfT3Jr5cMbD9z3J3mfYQJrU";
+                var userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+
                 var options = new OptionSet()
                 {
                     ExtractAudio = true,
                     AudioFormat = AudioConversionFormat.Mp3,
-                    AudioQuality = 0, // En iyi kalite
-                    Output = outputFilePath, // Dosya adı şablonu
+                    AudioQuality = 0,
+                    Output = outputFilePathTemplate,
                 };
 
-                // ÖNEMLİ: YouTube yavaşlatmasını aşmak için tarayıcı maskesi
-                // yt-dlp bunu otomatik yapar ama biz garantiye alalım
-                // options.AddCustomOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."); 
+                // 2. KRİTİK HAMLE: Header Ekleme
+                // yt-dlp'ye bu header'ları göndererek isteği manipüle ediyoruz.
+                options.AddCustomOption("--add-header", $"Cookie:{myCookie}");
+                options.AddCustomOption("--user-agent", userAgent);
 
-                // İndirmeyi Başlat
-                var res = await ytdl.RunAudioDownload(youtubeUrl, AudioConversionFormat.Mp3, default,null, null, options);
+                // JS Hatasını bastırmak ve güvenli indirme için ekstra ayarlar
+                options.AddCustomOption("--no-check-certificate", true);
+                options.AddCustomOption("--prefer-free-formats", true);
+
+                // İndirmeyi başlat (Araya null eklemeyi unutmadık)
+                var res = await ytdl.RunAudioDownload(youtubeUrl, AudioConversionFormat.Mp3, default, null, null, options);
 
                 if (!res.Success)
                 {
-                    // Hata detayını yakala
-                    string errorMsg = string.Join(" | ", res.ErrorOutput);
-                    throw new Exception($"yt-dlp Error: {errorMsg}");
+                    // Hata mesajını daha temiz hale getiriyoruz
+                    string errorMsg = string.Join(" ", res.ErrorOutput);
+                    throw new Exception($"yt-dlp Failed: {errorMsg}");
                 }
 
-                // yt-dlp bazen dosya adını kendi tamamlar, doğru dosyayı bulalım
-                string actualFile = res.Data; // İndirilen dosyanın tam yolu
-                if (!File.Exists(actualFile))
+                string actualFile = res.Data;
+
+                // Dosya adı düzeltme mantığı
+                if (string.IsNullOrEmpty(actualFile) || !File.Exists(actualFile))
                 {
-                    // Bazen data boş dönerse tahmin ettiğimiz yola bak
-                    // yt-dlp şablon kullandığı için dosya adı değişebilir, temp klasördeki en yeni mp3'ü alabiliriz worst case
-                    actualFile = outputFilePath; // Çoğunlukla .mp3 ekler
-                    if (!File.Exists(actualFile)) actualFile += ".mp3";
+                    actualFile = outputFilePathTemplate.Replace(".%(ext)s", ".mp3");
                 }
+
+                if (!File.Exists(actualFile))
+                    throw new Exception($"Downloaded file could not be found via yt-dlp. Expected at: {actualFile}");
 
                 using (var stream = File.OpenRead(actualFile))
                 {
@@ -128,14 +136,9 @@ namespace SmartVoiceNotes.Infrastructure
             }
             catch (Exception ex)
             {
-                throw new Exception($"Process Failed: {ex.Message}");
+                throw new Exception($"YouTube Error: {ex.Message}");
             }
         }
-
-        // --- DİĞER METOTLARIN (TranscribeAudioAsync, SendToGroqApi vb.) AYNEN KALSIN ---
-        // Sadece sınıfın üst kısmını ve TranscribeYoutubeAsync metodunu değiştirdik.
-        // Aşağıya mevcut kodundaki TranscribeAudioAsync ve diğerlerini yapıştır.
-
         public async Task<string> TranscribeAudioAsync(Stream audioStream, string fileName)
         {
             // ... SENİN MEVCUT KODLARIN ...
