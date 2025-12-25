@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using FFMpegCore; 
+using FFMpegCore;
 
 namespace SmartVoiceNotes.Infrastructure
 {
@@ -30,28 +30,24 @@ namespace SmartVoiceNotes.Infrastructure
         {
             try
             {
-                // 1. Ana dizini bul (/home/site/wwwroot)
                 var appRoot = Path.GetDirectoryName(Assembly.GetEntryAssembly().Location);
                 var toolsFolder = Path.Combine(appRoot, "ffmpeg");
 
                 if (!Directory.Exists(toolsFolder))
                     Console.WriteLine($"WARNING: Tools folder not found at {toolsFolder}");
 
-                // 2. Dosya yollarını belirle (Linux/Windows uyumlu)
                 bool isLinux = RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
 
                 string ffmpegName = isLinux ? "ffmpeg" : "ffmpeg.exe";
                 string ffprobeName = isLinux ? "ffprobe" : "ffprobe.exe";
-                string ytdlpName = isLinux ? "yt-dlp" : "yt-dlp.exe"; // Windows'ta test ediyorsan .exe indirmen lazım
+                string ytdlpName = isLinux ? "yt-dlp" : "yt-dlp.exe";
 
                 _ffmpegPath = Path.Combine(toolsFolder, ffmpegName);
                 _ffprobePath = Path.Combine(toolsFolder, ffprobeName);
                 _ytDlpPath = Path.Combine(toolsFolder, ytdlpName);
 
-                // 3. FFMpegCore Ayarı
                 GlobalFFOptions.Configure(new FFOptions { BinaryFolder = toolsFolder });
 
-                // 4. Linux İzinleri (chmod +x)
                 if (isLinux)
                 {
                     SetExecutable(_ffmpegPath);
@@ -84,12 +80,14 @@ namespace SmartVoiceNotes.Infrastructure
             var outputFileName = $"{Guid.NewGuid()}.%(ext)s";
             var outputFilePathTemplate = Path.Combine(tempFolder, outputFileName);
 
+            // Generate a temporary cookie file path
+            var cookieFilePath = Path.Combine(tempFolder, $"yt_cookies_{Guid.NewGuid()}.txt");
+
             try
             {
-                // 1. COOKIE VE USER-AGENT AYARLARI
-                // Burası YouTube'un "Sen botsun" engelini aşmamızı sağlayan yer.
-                var myCookie = "APISID=oA3yIrFqesCGFEaE/AJgO9yECOWl8Q34bg; SAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; __Secure-1PAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; __Secure-3PAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; SID=g.a0004AiReczUP6V63CXZNobS9Zua8S1xdafSr5ZEgtXlckJz-BBoe1b72DTmQ_tXuKWA5t0q0gACgYKAbsSARESFQHGX2MiLoTQQ9IvrFKXeWjKHo2foxoVAUF8yKrWK4DwzI0pGLDR371V3e9b0076; PREF=f6=40000000&f7=4150&tz=Europe.Istanbul&f5=30000&repeat=NONE; wide=1; SIDCC=AKEyXzVGd2NL3VeSCQ-0cdG3w_PD5QzUsQsAClGs8F78RR6KEMi6cfT3Jr5cMbD9z3J3mfYQJrU";
-                var userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+                // 1. CREATE COOKIE FILE (NETSCAPE FORMAT)
+                // We convert the raw string into a file format that yt-dlp accepts securely.
+                CreateCookieFile(cookieFilePath);
 
                 var options = new OptionSet()
                 {
@@ -99,35 +97,29 @@ namespace SmartVoiceNotes.Infrastructure
                     Output = outputFilePathTemplate,
                 };
 
-                // 2. KRİTİK HAMLE: Header Ekleme
-                // yt-dlp'ye bu header'ları göndererek isteği manipüle ediyoruz.
-                options.AddCustomOption("--add-header", $"Cookie:{myCookie}");
-                options.AddCustomOption("--user-agent", userAgent);
-
-                // JS Hatasını bastırmak ve güvenli indirme için ekstra ayarlar
+                // 2. PASS THE FILE PATH TO YT-DLP
+                options.Cookies = cookieFilePath; // This is the correct way!
                 options.AddCustomOption("--no-check-certificate", true);
-                options.AddCustomOption("--prefer-free-formats", true);
 
-                // İndirmeyi başlat (Araya null eklemeyi unutmadık)
+                // Add User-Agent just in case
+                options.AddCustomOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+
                 var res = await ytdl.RunAudioDownload(youtubeUrl, AudioConversionFormat.Mp3, default, null, null, options);
 
                 if (!res.Success)
                 {
-                    // Hata mesajını daha temiz hale getiriyoruz
                     string errorMsg = string.Join(" ", res.ErrorOutput);
                     throw new Exception($"yt-dlp Failed: {errorMsg}");
                 }
 
                 string actualFile = res.Data;
-
-                // Dosya adı düzeltme mantığı
                 if (string.IsNullOrEmpty(actualFile) || !File.Exists(actualFile))
                 {
                     actualFile = outputFilePathTemplate.Replace(".%(ext)s", ".mp3");
                 }
 
                 if (!File.Exists(actualFile))
-                    throw new Exception($"Downloaded file could not be found via yt-dlp. Expected at: {actualFile}");
+                    throw new Exception($"Downloaded file not found at: {actualFile}");
 
                 using (var stream = File.OpenRead(actualFile))
                 {
@@ -138,16 +130,53 @@ namespace SmartVoiceNotes.Infrastructure
             {
                 throw new Exception($"YouTube Error: {ex.Message}");
             }
+            finally
+            {
+                // CLEANUP: Delete the sensitive cookie file
+                if (File.Exists(cookieFilePath))
+                {
+                    try { File.Delete(cookieFilePath); } catch { }
+                }
+            }
         }
+
+        // --- HELPER METHOD TO CREATE NETSCAPE COOKIE FILE ---
+        private void CreateCookieFile(string path)
+        {
+            // The raw cookie string you provided
+            var rawCookies = "APISID=oA3yIrFqesCGFEaE/AJgO9yECOWl8Q34bg; SAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; __Secure-1PAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; __Secure-3PAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; SID=g.a0004AiReczUP6V63CXZNobS9Zua8S1xdafSr5ZEgtXlckJz-BBoe1b72DTmQ_tXuKWA5t0q0gACgYKAbsSARESFQHGX2MiLoTQQ9IvrFKXeWjKHo2foxoVAUF8yKrWK4DwzI0pGLDR371V3e9b0076; PREF=f6=40000000&f7=4150&tz=Europe.Istanbul&f5=30000&repeat=NONE; wide=1; SIDCC=AKEyXzVGd2NL3VeSCQ-0cdG3w_PD5QzUsQsAClGs8F78RR6KEMi6cfT3Jr5cMbD9z3J3mfYQJrU";
+
+            var sb = new StringBuilder();
+            sb.AppendLine("# Netscape HTTP Cookie File");
+            sb.AppendLine("# This file was generated by SmartVoiceNotes code");
+            sb.AppendLine("# https://curl.haxx.se/rfc/cookie_spec.html");
+            sb.AppendLine();
+
+            var parts = rawCookies.Split(';');
+            foreach (var part in parts)
+            {
+                var trimPart = part.Trim();
+                if (string.IsNullOrEmpty(trimPart)) continue;
+
+                var eqIndex = trimPart.IndexOf('=');
+                if (eqIndex > 0)
+                {
+                    var key = trimPart.Substring(0, eqIndex);
+                    var value = trimPart.Substring(eqIndex + 1);
+
+                    // Format: .domain (tab) flag (tab) path (tab) secure (tab) expiration (tab) name (tab) value
+                    // Expiration: 253402300799 is roughly year 9999 (never expire for session)
+                    sb.AppendLine($".youtube.com\tTRUE\t/\tFALSE\t253402300799\t{key}\t{value}");
+                }
+            }
+
+            File.WriteAllText(path, sb.ToString());
+        }
+
+        // --- KEEP YOUR EXISTING METHODS BELOW (TranscribeAudioAsync, etc.) ---
+
         public async Task<string> TranscribeAudioAsync(Stream audioStream, string fileName)
         {
-            // ... SENİN MEVCUT KODLARIN ...
-            // (Burayı aynen koru, sadece yukarıdaki constructor ve TranscribeYoutubeAsync değişti)
-
-            // Ufak bir düzeltme: FFProbe analizinde yolu bulması için GlobalFFOptions yukarıda ayarlandı, sorun yok.
-            // Kopyala yapıştır yaparken eski TranscribeAudioAsync kodunu buraya eklemeyi unutma.
-
-            // GEÇİCİ OLARAK KODU TAMAMLAMAK ADINA BURAYA SENİN ESKİ KODUNU ÖZETLİYORUM:
             var tempFilePath = Path.GetTempFileName();
             var inputPath = Path.ChangeExtension(tempFilePath, Path.GetExtension(fileName));
             if (string.IsNullOrEmpty(Path.GetExtension(inputPath))) inputPath += ".mp3";
@@ -161,9 +190,6 @@ namespace SmartVoiceNotes.Infrastructure
                     await audioStream.CopyToAsync(fileStream);
                 }
 
-                // IsVideoFile kontrolü vb... (Aynen kalsın)
-
-                // 2. DOSYA ANALİZİ
                 var fileInfo = new FileInfo(inputPath);
                 if (fileInfo.Length < 20 * 1024 * 1024)
                 {
@@ -183,11 +209,6 @@ namespace SmartVoiceNotes.Infrastructure
 
         private async Task<string> ProcessLargeFileAsync(string inputPath)
         {
-            // ... SENİN MEVCUT KODLARIN ...
-            // FFMpegArguments.FromFileInput... kısımları aynen kalsın.
-            // Sadece buraya tekrar kopyalamadım yer kaplamasın diye.
-
-            // KODU TAMAMLAMAK İÇİN AŞAĞIDAKİLERİ DE EKLE:
             var transcriptionBuilder = new StringBuilder();
             var mediaInfo = await FFProbe.AnalyseAsync(inputPath);
             var duration = mediaInfo.Duration;
@@ -236,7 +257,6 @@ namespace SmartVoiceNotes.Infrastructure
 
         private async Task<string> SendToGroqApi(string filePath)
         {
-            // ... SENİN MEVCUT KODLARIN ...
             using var content = new MultipartFormDataContent();
             using var fileStream = File.OpenRead(filePath);
             var fileContent = new StreamContent(fileStream);
