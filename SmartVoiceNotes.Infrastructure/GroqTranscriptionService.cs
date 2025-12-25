@@ -24,54 +24,45 @@ namespace SmartVoiceNotes.Infrastructure
         }
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
-            // 1. "BEN TARAYICIYIM" MASKESİ (User-Agent Spoofing)
-            // Azure IP'leri engellendiği için, isteği sanki gerçek bir Chrome tarayıcısı yapıyormuş gibi gösteriyoruz.
-            using var httpClient = new HttpClient();
+             using var httpClient = new HttpClient();
+
+            var youtubeCookie = "APISID=oA3yIrFqesCGFEaE/AJgO9yECOWl8Q34bg; SAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; __Secure-1PAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; __Secure-3PAPISID=Tkpwg356o6GWVxuI/Aq9U0D7i7B70x8hNs; SID=g.a0004AiReczUP6V63CXZNobS9Zua8S1xdafSr5ZEgtXlckJz-BBoe1b72DTmQ_tXuKWA5t0q0gACgYKAbsSARESFQHGX2MiLoTQQ9IvrFKXeWjKHo2foxoVAUF8yKrWK4DwzI0pGLDR371V3e9b0076; PREF=f6=40000000&f7=4150&tz=Europe.Istanbul&f5=30000&repeat=NONE; wide=1; SIDCC=AKEyXzVGd2NL3VeSCQ-0cdG3w_PD5QzUsQsAClGs8F78RR6KEMi6cfT3Jr5cMbD9z3J3mfYQJrU";
+
+            // Tarayıcı taklidi yapıyoruz
             httpClient.DefaultRequestHeaders.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            httpClient.DefaultRequestHeaders.Add("Cookie", youtubeCookie);
             httpClient.DefaultRequestHeaders.Add("Referer", "https://www.youtube.com/");
 
+            // YoutubeClient'a bu ayarlı HttpClient'ı veriyoruz
             var youtube = new YoutubeClient(httpClient);
 
             try
             {
-                // Video bilgilerini al
                 var video = await youtube.Videos.GetAsync(youtubeUrl);
 
-                // Manifest (akış) bilgilerini al
                 var streamManifest = await youtube.Videos.Streams.GetManifestAsync(youtubeUrl);
 
-                // Sadece ses akışını al (En yüksek kalite)
                 var streamInfo = streamManifest.GetAudioOnlyStreams().GetWithHighestBitrate();
 
                 if (streamInfo == null)
-                    throw new Exception("Audio stream could not found (Manifest empty).");
+                    throw new Exception("Audio stream could not found.");
 
-                // Geçici dosya yolu
                 var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.mp3");
 
-                // İndirme işlemi
+                // İndirme işlemi (Artık cookie sayesinde Azure IP engeline takılmayacak)
                 await youtube.Videos.Streams.DownloadAsync(streamInfo, tempFilePath);
 
                 try
                 {
                     using (var stream = File.OpenRead(tempFilePath))
                     {
-                        // İndirilen dosyayı ses analizine gönder
                         return await TranscribeAudioAsync(stream, "youtube_audio.mp3");
                     }
                 }
                 finally
                 {
-                    // Temizlik
-                    if (File.Exists(tempFilePath))
-                    {
-                        try { File.Delete(tempFilePath); } catch { /* Silinemezse logla ama patlatma */ }
-                    }
+                    if (File.Exists(tempFilePath)) try { File.Delete(tempFilePath); } catch { }
                 }
-            }
-            catch (YoutubeExplode.Exceptions.VideoUnavailableException)
-            {
-                throw new Exception("YouTube says 'Video Unavailable'. This is likely an IP ban on Azure servers. Try a different video or wait.");
             }
             catch (Exception ex)
             {
