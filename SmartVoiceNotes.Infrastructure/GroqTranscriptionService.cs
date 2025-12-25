@@ -72,60 +72,88 @@ namespace SmartVoiceNotes.Infrastructure
 
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
-            // 1. ADIM: Cobalt API'sini kullanarak temiz indirme linki al
-            // (Cobalt, YouTube engellerini kendi sunucularında aşar)
-            var requestBody = new
+            // YEDEKLI SUNUCU LISTESI (Biri çalışmazsa diğerine geçer)
+            var cobaltInstances = new[]
             {
-                url = youtubeUrl,
-                aFormat = "mp3",
-                isAudioOnly = true
-            };
+        "https://api.cobalt.tools/api/json", // Ana sunucu (Bazen yoğun)
+        "https://co.wuk.sh/api/json",        // En popüler ve sağlam alternatif
+        "https://api.gsc.sh/api/json",       // Başka bir güçlü yedek
+        "https://cobalt.api.sc/api/json"     // Bir yedek daha
+    };
 
-            var jsonContent = new StringContent(System.Text.Json.JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+            string downloadUrl = null;
+            Exception lastException = null;
 
-            // Halka açık güvenilir bir Cobalt instance'ı (kendi sitesinden)
-            // Eğer bu yoğunsa "https://cobalt.api.sc/" gibi başka instance'lar denenebilir.
-            var cobaltApiUrl = "https://api.cobalt.tools/api/json";
-
-            // Header ayarları (Cobalt json ister)
-            var request = new HttpRequestMessage(HttpMethod.Post, cobaltApiUrl);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            request.Content = jsonContent;
-
-            var response = await _httpClient.SendAsync(request);
-
-            if (!response.IsSuccessStatusCode)
-                throw new Exception("Cobalt API video linkini alamadı. Servis yoğun olabilir.");
-
-            var responseString = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(responseString);
-
-            // Cobalt bize direkt MP3 linki verir: "url" parametresinde
-            string downloadUrl = "";
-            if (doc.RootElement.TryGetProperty("url", out JsonElement urlElement))
+            // Her bir sunucuyu sırayla dene
+            foreach (var apiUrl in cobaltInstances)
             {
-                downloadUrl = urlElement.GetString();
+                try
+                {
+                    // İsteği hazırla
+                    var requestBody = new
+                    {
+                        url = youtubeUrl,
+                        aFormat = "mp3",
+                        isAudioOnly = true
+                    };
+
+                    var jsonContent = new StringContent(
+                        System.Text.Json.JsonSerializer.Serialize(requestBody),
+                        Encoding.UTF8,
+                        "application/json");
+
+                    var request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
+                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                    request.Content = jsonContent;
+
+                    // API'ye istek at
+                    var response = await _httpClient.SendAsync(request);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        // Bu sunucu hata verdiyse döngü devam etsin, sıradakine geçsin
+                        continue;
+                    }
+
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(responseString);
+
+                    // Linki almaya çalış
+                    if (doc.RootElement.TryGetProperty("url", out JsonElement urlElement))
+                    {
+                        downloadUrl = urlElement.GetString();
+                        // Link bulunduysa döngüyü kır, artık diğerlerini denemene gerek yok
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Hata olursa kaydet ve sıradaki sunucuya geç
+                    lastException = ex;
+                }
             }
-            else
+
+            // Döngü bitti, hala elimizde link yoksa hepsi bozuk demektir
+            if (string.IsNullOrEmpty(downloadUrl))
             {
-                throw new Exception("Video indirilebilir linki bulunamadı.");
+                throw new Exception("Tüm Cobalt sunucuları denendi ancak yanıt alınamadı. Lütfen daha sonra tekrar deneyin.");
             }
 
-            // 2. ADIM: Bu linkteki dosyayı indir
+            // --- BURADAN SONRASI AYNI (Dosyayı İndir ve Groq'a Gönder) ---
+
             var tempFilePath = Path.GetTempFileName();
-            // Uzantıyı mp3 yapalım
             var mp3Path = Path.ChangeExtension(tempFilePath, ".mp3");
 
-            // Dosyayı Azure sunucusuna çek
-            using (var stream = await _httpClient.GetStreamAsync(downloadUrl))
-            using (var fileStream = File.Create(mp3Path))
-            {
-                await stream.CopyToAsync(fileStream);
-            }
-
-            // 3. ADIM: İnen dosyayı Groq'a gönder (Mevcut metodunu kullan)
             try
             {
+                // Bulduğumuz sağlam linkten dosyayı indir
+                using (var stream = await _httpClient.GetStreamAsync(downloadUrl))
+                using (var fileStream = File.Create(mp3Path))
+                {
+                    await stream.CopyToAsync(fileStream);
+                }
+
+                // Groq'a gönder
                 using (var audioStream = File.OpenRead(mp3Path))
                 {
                     return await TranscribeAudioAsync(audioStream, "youtube_audio.mp3");
