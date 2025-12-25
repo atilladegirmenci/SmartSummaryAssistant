@@ -70,31 +70,43 @@ namespace SmartVoiceNotes.Infrastructure
             }
         }
 
+
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
-            // YEDEKLI SUNUCU LISTESI (Biri çalışmazsa diğerine geçer)
+            // Cloudflare'i aşmak için sağlam bir User-Agent ve Referer şart
+            var chromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+
+            // Güçlü sunucular listesi
             var cobaltInstances = new[]
             {
-        "https://api.cobalt.tools/api/json", // Ana sunucu (Bazen yoğun)
-        "https://co.wuk.sh/api/json",        // En popüler ve sağlam alternatif
-        "https://api.gsc.sh/api/json",       // Başka bir güçlü yedek
-        "https://cobalt.api.sc/api/json"     // Bir yedek daha
+        "https://co.wuk.sh/api/json",      // En sağlamı
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt.api.sc/api/json",
+        "https://api.gsc.sh/api/json"
     };
 
             string downloadUrl = null;
-            Exception lastException = null;
 
-            // Her bir sunucuyu sırayla dene
+            // Her seferinde temiz bir client oluşturalım ki önceki hatalar etkilemesin
+            using var client = new HttpClient();
+
+            // 1. ADIM: İsteği "Tarayıcı" gibi göster (Cloudflare Korumasını Aşmak İçin)
+            client.DefaultRequestHeaders.Add("User-Agent", chromeUserAgent);
+            client.DefaultRequestHeaders.Add("Origin", "https://cobalt.tools"); // Kendisiymiş gibi davran
+            client.DefaultRequestHeaders.Add("Referer", "https://cobalt.tools/");
+            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
             foreach (var apiUrl in cobaltInstances)
             {
                 try
                 {
-                    // İsteği hazırla
                     var requestBody = new
                     {
                         url = youtubeUrl,
                         aFormat = "mp3",
-                        isAudioOnly = true
+                        isAudioOnly = true,
+                        // Bazı instance'lar filenamePattern ister
+                        filenamePattern = "classic"
                     };
 
                     var jsonContent = new StringContent(
@@ -102,58 +114,64 @@ namespace SmartVoiceNotes.Infrastructure
                         Encoding.UTF8,
                         "application/json");
 
-                    var request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
-                    request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                    request.Content = jsonContent;
+                    var response = await client.PostAsync(apiUrl, jsonContent);
 
-                    // API'ye istek at
-                    var response = await _httpClient.SendAsync(request);
-
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        // Bu sunucu hata verdiyse döngü devam etsin, sıradakine geçsin
-                        continue;
-                    }
+                    if (!response.IsSuccessStatusCode) continue;
 
                     var responseString = await response.Content.ReadAsStringAsync();
                     using var doc = JsonDocument.Parse(responseString);
 
-                    // Linki almaya çalış
+                    // Başarılı yanıtı yakala
                     if (doc.RootElement.TryGetProperty("url", out JsonElement urlElement))
                     {
                         downloadUrl = urlElement.GetString();
-                        // Link bulunduysa döngüyü kır, artık diğerlerini denemene gerek yok
                         break;
                     }
+                    // Bazıları 'picker' veya 'stream' dönebilir, onları da kontrol edelim
+                    else if (doc.RootElement.TryGetProperty("picker", out JsonElement pickerElement))
+                    {
+                        // Bazen liste döner, ilkini al
+                        foreach (var item in pickerElement.EnumerateArray())
+                        {
+                            if (item.TryGetProperty("url", out JsonElement pickUrl))
+                            {
+                                downloadUrl = pickUrl.GetString();
+                                break;
+                            }
+                        }
+                        if (downloadUrl != null) break;
+                    }
                 }
-                catch (Exception ex)
+                catch
                 {
-                    // Hata olursa kaydet ve sıradaki sunucuya geç
-                    lastException = ex;
+                    // Hata alırsan sessizce diğer sunucuya geç
+                    continue;
                 }
             }
 
-            // Döngü bitti, hala elimizde link yoksa hepsi bozuk demektir
             if (string.IsNullOrEmpty(downloadUrl))
             {
-                throw new Exception("Tüm Cobalt sunucuları denendi ancak yanıt alınamadı. Lütfen daha sonra tekrar deneyin.");
+                throw new Exception("YouTube bağlantısı kurulamadı (Cloudflare veya API engeli).");
             }
 
-            // --- BURADAN SONRASI AYNI (Dosyayı İndir ve Groq'a Gönder) ---
+            // --- 2. ADIM: DOSYAYI İNDİR ---
 
             var tempFilePath = Path.GetTempFileName();
             var mp3Path = Path.ChangeExtension(tempFilePath, ".mp3");
 
             try
             {
-                // Bulduğumuz sağlam linkten dosyayı indir
-                using (var stream = await _httpClient.GetStreamAsync(downloadUrl))
+                // Dosyayı indirirken de aynı User-Agent'ı kullanmalıyız!
+                using var downloadClient = new HttpClient();
+                downloadClient.DefaultRequestHeaders.Add("User-Agent", chromeUserAgent);
+
+                using (var stream = await downloadClient.GetStreamAsync(downloadUrl))
                 using (var fileStream = File.Create(mp3Path))
                 {
                     await stream.CopyToAsync(fileStream);
                 }
 
-                // Groq'a gönder
+                // --- 3. ADIM: GROQ'A GÖNDER ---
                 using (var audioStream = File.OpenRead(mp3Path))
                 {
                     return await TranscribeAudioAsync(audioStream, "youtube_audio.mp3");
@@ -165,6 +183,8 @@ namespace SmartVoiceNotes.Infrastructure
                 if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
             }
         }
+
+
         // --- HELPER METHOD TO CREATE NETSCAPE COOKIE FILE ---
         private void CreateCookieFile(string path)
         {
