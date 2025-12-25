@@ -72,74 +72,71 @@ namespace SmartVoiceNotes.Infrastructure
 
         public async Task<string> TranscribeYoutubeAsync(string youtubeUrl)
         {
-            var ytdl = new YoutubeDL();
-            ytdl.YoutubeDLPath = _ytDlpPath;
-            ytdl.FFmpegPath = _ffmpegPath;
+            // 1. ADIM: Cobalt API'sini kullanarak temiz indirme linki al
+            // (Cobalt, YouTube engellerini kendi sunucularında aşar)
+            var requestBody = new
+            {
+                url = youtubeUrl,
+                aFormat = "mp3",
+                isAudioOnly = true
+            };
 
-            var tempFolder = Path.GetTempPath();
-            var outputFileName = $"{Guid.NewGuid()}.%(ext)s";
-            var outputFilePathTemplate = Path.Combine(tempFolder, outputFileName);
+            var jsonContent = new StringContent(System.Text.Json.JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
 
-            // Generate a temporary cookie file path
-            var cookieFilePath = Path.Combine(tempFolder, $"yt_cookies_{Guid.NewGuid()}.txt");
+            // Halka açık güvenilir bir Cobalt instance'ı (kendi sitesinden)
+            // Eğer bu yoğunsa "https://cobalt.api.sc/" gibi başka instance'lar denenebilir.
+            var cobaltApiUrl = "https://api.cobalt.tools/api/json";
 
+            // Header ayarları (Cobalt json ister)
+            var request = new HttpRequestMessage(HttpMethod.Post, cobaltApiUrl);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Content = jsonContent;
+
+            var response = await _httpClient.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+                throw new Exception("Cobalt API video linkini alamadı. Servis yoğun olabilir.");
+
+            var responseString = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(responseString);
+
+            // Cobalt bize direkt MP3 linki verir: "url" parametresinde
+            string downloadUrl = "";
+            if (doc.RootElement.TryGetProperty("url", out JsonElement urlElement))
+            {
+                downloadUrl = urlElement.GetString();
+            }
+            else
+            {
+                throw new Exception("Video indirilebilir linki bulunamadı.");
+            }
+
+            // 2. ADIM: Bu linkteki dosyayı indir
+            var tempFilePath = Path.GetTempFileName();
+            // Uzantıyı mp3 yapalım
+            var mp3Path = Path.ChangeExtension(tempFilePath, ".mp3");
+
+            // Dosyayı Azure sunucusuna çek
+            using (var stream = await _httpClient.GetStreamAsync(downloadUrl))
+            using (var fileStream = File.Create(mp3Path))
+            {
+                await stream.CopyToAsync(fileStream);
+            }
+
+            // 3. ADIM: İnen dosyayı Groq'a gönder (Mevcut metodunu kullan)
             try
             {
-                // 1. CREATE COOKIE FILE (NETSCAPE FORMAT)
-                // We convert the raw string into a file format that yt-dlp accepts securely.
-                CreateCookieFile(cookieFilePath);
-
-                var options = new OptionSet()
+                using (var audioStream = File.OpenRead(mp3Path))
                 {
-                    ExtractAudio = true,
-                    AudioFormat = AudioConversionFormat.Mp3,
-                    AudioQuality = 0,
-                    Output = outputFilePathTemplate,
-                };
-
-                // 2. PASS THE FILE PATH TO YT-DLP
-                options.Cookies = cookieFilePath; // This is the correct way!
-                options.AddCustomOption("--no-check-certificate", true);
-
-                // Add User-Agent just in case
-                options.AddCustomOption("--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
-
-                var res = await ytdl.RunAudioDownload(youtubeUrl, AudioConversionFormat.Mp3, default, null, null, options);
-
-                if (!res.Success)
-                {
-                    string errorMsg = string.Join(" ", res.ErrorOutput);
-                    throw new Exception($"yt-dlp Failed: {errorMsg}");
+                    return await TranscribeAudioAsync(audioStream, "youtube_audio.mp3");
                 }
-
-                string actualFile = res.Data;
-                if (string.IsNullOrEmpty(actualFile) || !File.Exists(actualFile))
-                {
-                    actualFile = outputFilePathTemplate.Replace(".%(ext)s", ".mp3");
-                }
-
-                if (!File.Exists(actualFile))
-                    throw new Exception($"Downloaded file not found at: {actualFile}");
-
-                using (var stream = File.OpenRead(actualFile))
-                {
-                    return await TranscribeAudioAsync(stream, "youtube_audio.mp3");
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new Exception($"YouTube Error: {ex.Message}");
             }
             finally
             {
-                // CLEANUP: Delete the sensitive cookie file
-                if (File.Exists(cookieFilePath))
-                {
-                    try { File.Delete(cookieFilePath); } catch { }
-                }
+                if (File.Exists(mp3Path)) File.Delete(mp3Path);
+                if (File.Exists(tempFilePath)) File.Delete(tempFilePath);
             }
         }
-
         // --- HELPER METHOD TO CREATE NETSCAPE COOKIE FILE ---
         private void CreateCookieFile(string path)
         {
