@@ -260,8 +260,17 @@
     private string youtubeUrl = "";
     private IBrowserFile? selectedFile;
 
-    // Object to hold user preferences
+    // Kullanıcı tercihleri
     private AnalysisPreferences preferences = new AnalysisPreferences();
+
+    // Cobalt Sunucuları (Frontend'den çağıracağız)
+    private readonly string[] cobaltInstances = new[]
+    {
+        "https://co.wuk.sh/api/json",      // En popüleri
+        "https://api.cobalt.tools/api/json",
+        "https://cobalt.api.sc/api/json",
+        "https://api.gsc.sh/api/json"
+    };
 
     private void HandleFileSelection(InputFileChangeEventArgs e)
     {
@@ -277,54 +286,11 @@
             return;
         }
 
-        isProcessing = true;
-        errorMessage = null;
-        apiResult = null;
-        isTranscriptVisible = false;
-
-        try
-        {
-            long maxFileSize = 500L * 1024 * 1024; // 500 MB Limit
-
-            using var content = new MultipartFormDataContent();
-            var fileContent = new StreamContent(selectedFile.OpenReadStream(maxFileSize));
-            fileContent.Headers.ContentType = new MediaTypeHeaderValue(selectedFile.ContentType);
-            content.Add(fileContent, "file", selectedFile.Name);
-
-            // Constructing the URL with Query Parameters 
-            var url = $"api/AudioProcess/upload?" +
-                      $"language={preferences.Language}&" +
-                      $"sourceType={preferences.SourceType}&" +
-                      $"style={preferences.SummaryStyle}&" +
-                      $"includeQuiz={preferences.IncludeQuiz}&" +
-                      $"qCount={preferences.QuestionCount}";
-
-            var response = await Http.PostAsync(url, content);
-
-            if (response.IsSuccessStatusCode)
-            {
-                apiResult = await response.Content.ReadFromJsonAsync<ProcessResponseDto>();
-
-                StateHasChanged();
-                await Task.Delay(100); 
-                await JSRuntime.InvokeVoidAsync("renderMath");
-            }
-            else
-            {
-                var errorMsg = await response.Content.ReadAsStringAsync();
-                errorMessage = $"Error: {response.StatusCode} - {errorMsg}";
-            }
-        }
-        catch (Exception ex)
-        {
-            errorMessage = $"Connection Error: {ex.Message}";
-        }
-        finally
-        {
-            isProcessing = false;
-        }
+        // Dosya seçili ise direkt yükleme metoduna gönder
+        await UploadFileToBackend(selectedFile.OpenReadStream(500L * 1024 * 1024), selectedFile.Name, selectedFile.ContentType);
     }
 
+    // YENİ: YouTube İşlemi (Frontend -> Cobalt -> Backend Upload)
     private async Task HandleYoutubeSubmit()
     {
         if (string.IsNullOrWhiteSpace(youtubeUrl))
@@ -340,15 +306,108 @@
 
         try
         {
-            var requestUrl = $"api/AudioProcess/process-youtube?" +
-                      $"url={Uri.EscapeDataString(youtubeUrl)}&" +
+            // 1. ADIM: Cobalt API'den indirme linkini al
+            string? downloadUrl = await GetCobaltDownloadUrl(youtubeUrl);
+
+            if (string.IsNullOrEmpty(downloadUrl))
+            {
+                errorMessage = "Could not get download link. Please try again or check the URL.";
+                return;
+            }
+
+            // 2. ADIM: Dosyayı tarayıcı hafızasına indir (Client-Side)
+            // Not: Tarayıcı bunu kendi IP'si ile yapar, Azure engeline takılmaz!
+            var audioBytes = await Http.GetByteArrayAsync(downloadUrl);
+            var memoryStream = new MemoryStream(audioBytes);
+
+            // 3. ADIM: Backend'deki 'Upload' metoduna gönder
+            // Sanki kullanıcı bilgisayardan dosya seçmiş gibi davranıyoruz.
+            await UploadFileToBackend(memoryStream, "youtube_audio.mp3", "audio/mpeg");
+
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Processing Error: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    // Yardımcı Metot: Cobalt API'leri dener
+    private async Task<string?> GetCobaltDownloadUrl(string url)
+    {
+        var requestBody = new
+        {
+            url = url,
+            aFormat = "mp3",
+            isAudioOnly = true,
+            filenamePattern = "classic"
+        };
+
+        foreach (var apiUrl in cobaltInstances)
+        {
+            try
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, apiUrl);
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                // Tarayıcı başlıkları (CORS için önemli olabilir)
+                request.Headers.Add("Origin", "https://cobalt.tools");
+
+                request.Content = new StringContent(
+                    JsonSerializer.Serialize(requestBody),
+                    System.Text.Encoding.UTF8,
+                    "application/json");
+
+                var response = await Http.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode) continue;
+
+                var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+                if (json.TryGetProperty("url", out var urlProp))
+                {
+                    return urlProp.GetString();
+                }
+                else if (json.TryGetProperty("picker", out var pickerProp))
+                {
+                    foreach (var item in pickerProp.EnumerateArray())
+                    {
+                        if (item.TryGetProperty("url", out var pickUrl))
+                            return pickUrl.GetString();
+                    }
+                }
+            }
+            catch
+            {
+                continue; // Bir sonraki sunucuyu dene
+            }
+        }
+        return null;
+    }
+
+    // Yardımcı Metot: Backend'e Dosya Yükleme (Ortak Kullanım)
+    private async Task UploadFileToBackend(Stream fileStream, string fileName, string contentType)
+    {
+        isProcessing = true;
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            var streamContent = new StreamContent(fileStream);
+            streamContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+
+            content.Add(streamContent, "file", fileName);
+
+            // URL Parametrelerini oluştur
+            var url = $"api/AudioProcess/upload?" +
                       $"language={preferences.Language}&" +
                       $"sourceType={preferences.SourceType}&" +
                       $"style={preferences.SummaryStyle}&" +
                       $"includeQuiz={preferences.IncludeQuiz}&" +
                       $"qCount={preferences.QuestionCount}";
 
-            var response = await Http.PostAsync(requestUrl, null);
+            var response = await Http.PostAsync(url, content);
 
             if (response.IsSuccessStatusCode)
             {
@@ -363,13 +422,14 @@
         }
         catch (Exception ex)
         {
-            errorMessage = $"Connection Error: {ex.Message}";
+            errorMessage = $"Upload Error: {ex.Message}";
         }
         finally
         {
-            isProcessing = false;
+            isProcessing = false; // UploadFileToBackend içinde de kapatıyoruz
         }
     }
+
     private async Task TriggerMathJax()
     {
         StateHasChanged();
@@ -377,21 +437,15 @@
         await JSRuntime.InvokeVoidAsync("renderMath");
     }
 
-    private void ToggleTranscript()
-    {
-        isTranscriptVisible = !isTranscriptVisible;
-    }
+    private void ToggleTranscript() => isTranscriptVisible = !isTranscriptVisible;
+
     private string ConvertMarkdownToHtml(string markdown)
     {
         if (string.IsNullOrEmpty(markdown)) return "";
-
-        var pipeline = new MarkdownPipelineBuilder()
-            .UseAdvancedExtensions() 
-            .Build();
-
+        var pipeline = new MarkdownPipelineBuilder().UseAdvancedExtensions().Build();
         return Markdown.ToHtml(markdown, pipeline);
     }
-    // Model for UI Preferences
+
     public class AnalysisPreferences
     {
         public string Language { get; set; } = "Turkish";
@@ -407,6 +461,7 @@
         public string Summary { get; set; }
         public List<string> QuizQuestions { get; set; }
     }
+}
 }
 <style>
     .form-select, .form-control {
