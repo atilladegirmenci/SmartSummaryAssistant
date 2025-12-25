@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using FFMpegCore; // Büyük dosya işleme için hala buna ihtiyacımız var
+using FFMpegCore; 
 
 namespace SmartVoiceNotes.Infrastructure
 {

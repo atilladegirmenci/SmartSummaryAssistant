@@ -10,6 +10,7 @@
   <ItemGroup>
     <None Remove="ffmpeg\ffmpeg" />
     <None Remove="ffmpeg\ffprobe" />
+    <None Remove="ffmpeg\yt-dlp" />
   </ItemGroup>
 
   <ItemGroup>
@@ -17,6 +18,9 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
     <Content Include="ffmpeg\ffprobe">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="ffmpeg\yt-dlp">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
